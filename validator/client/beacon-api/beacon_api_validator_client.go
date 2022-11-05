@@ -6,12 +6,19 @@ package beacon_api
 import (
 	"context"
 
+	"encoding/json"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/pkg/errors"
 	ethpb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
 	iface "github.com/prysmaticlabs/prysm/v3/validator/client/iface"
+	"net/http"
+	"strconv"
+	"time"
 )
 
 type beaconApiValidatorClient struct {
+	address    string
+	httpClient http.Client
 }
 
 func (*beaconApiValidatorClient) GetDuties(_ context.Context, _ *ethpb.DutiesRequest) (*ethpb.DutiesResponse, error) {
@@ -140,11 +147,49 @@ func (*beaconApiValidatorClient) WaitForActivation(_ context.Context, _ *ethpb.V
 }
 
 // Deprecated: Do not use.
-func (*beaconApiValidatorClient) WaitForChainStart(_ context.Context, _ *empty.Empty) (ethpb.BeaconNodeValidator_WaitForChainStartClient, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.WaitForChainStart is not implemented")
+func (c *beaconApiValidatorClient) WaitForChainStart(_ context.Context, _ *empty.Empty) (*ethpb.ChainStartResponse, error) {
+	resp, err := c.httpClient.Get(c.address + "/eth/v1/beacon/genesis")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err = resp.Body.Close(); err != nil {
+			return
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		errorJson := ErrorResponseJson{}
+		err = json.NewDecoder(resp.Body).Decode(&errorJson)
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, errors.Errorf("error %d: %s", errorJson.Code, errorJson.Message)
+	}
+
+	genesisJson := GenesisResponseJson{}
+	err = json.NewDecoder(resp.Body).Decode(&genesisJson)
+	if err != nil {
+		return nil, err
+	}
+
+	genesisTime, err := strconv.ParseUint(genesisJson.Data.GenesisTime, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	chainStartResponse := &ethpb.ChainStartResponse{}
+	chainStartResponse.Started = true
+	chainStartResponse.GenesisTime = genesisTime
+	chainStartResponse.GenesisValidatorsRoot = []byte(genesisJson.Data.GenesisValidatorsRoot)
+
+	return chainStartResponse, nil
 }
 
 func NewBeaconApiValidatorClient() iface.ValidatorClient {
-	return &beaconApiValidatorClient{}
+	// TODO: Take the address and client as arguments
+	return &beaconApiValidatorClient{"http://localhost:3500", http.Client{
+		Timeout: 120 * time.Second,
+	}}
 }
