@@ -247,3 +247,8 @@ type ExecutionPayloadJson struct {
 	BlockHash     string   `json:"block_hash" hex:"true"`
 	Transactions  []string `json:"transactions" hex:"true"`
 }
+
+type BlockAttestationsResponseJson struct {
+	Data                []*AttestationJson `json:"data"`
+	ExecutionOptimistic bool               `json:"execution_optimistic"`
+}

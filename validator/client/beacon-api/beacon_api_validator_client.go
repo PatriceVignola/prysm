@@ -6,6 +6,7 @@ package beacon_api
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -59,9 +60,35 @@ func (*beaconApiValidatorClient) DomainData(_ context.Context, _ *ethpb.DomainRe
 	panic("beaconApiValidatorClient.DomainData is not implemented")
 }
 
-func (*beaconApiValidatorClient) GetAttestationData(_ context.Context, _ *ethpb.AttestationDataRequest) (*ethpb.AttestationData, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.GetAttestationData is not implemented")
+func (c *beaconApiValidatorClient) GetAttestationData(_ context.Context, in *ethpb.AttestationDataRequest) (*ethpb.AttestationData, error) {
+	resp, err := c.httpClient.Get(c.url + fmt.Sprintf("/eth/v1/beacon/blocks/%d/attestations", in.Slot))
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err = resp.Body.Close(); err != nil {
+			return
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		errorJson := ErrorResponseJson{}
+		err = json.NewDecoder(resp.Body).Decode(&errorJson)
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, errors.Errorf("error %d: %s", errorJson.Code, errorJson.Message)
+	}
+
+	blockAttestationsResponseJson := BlockAttestationsResponseJson{}
+	err = json.NewDecoder(resp.Body).Decode(&blockAttestationsResponseJson)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ethpb.AttestationData{}
+	response.BeaconBlockRoot = blockAttestationsResponseJson.Data
 }
 
 func (*beaconApiValidatorClient) GetBeaconBlock(_ context.Context, _ *ethpb.BlockRequest) (*ethpb.GenericBeaconBlock, error) {
@@ -594,13 +621,18 @@ func (c *beaconApiValidatorClient) getDuties(epoch uint64, pubkeys [][]byte) ([]
 				dutyResponse.PublicKey = []byte(dutyData.Pubkey)
 				dutyResponse.IsSyncCommittee = true
 
-				for _, committeeIndex := range dutyData.ValidatorSyncCommitteeIndices {
-					uintCommitteeIndex, err := strconv.ParseUint(committeeIndex, 10, 64)
+				for indexInCommittee, committeeValidatorIndex := range dutyData.ValidatorSyncCommitteeIndices {
+					uintCommitteeValidatorIndex, err := strconv.ParseUint(committeeValidatorIndex, 10, 64)
 					if err != nil {
 						return nil, err
 					}
 
-					dutyResponse.Committee = append(dutyResponse.Committee, types.ValidatorIndex(uintCommitteeIndex))
+					// Set the index of the validator in the committee array
+					if uintCommitteeValidatorIndex == validatorIndex {
+						dutyResponse.CommitteeIndex = types.CommitteeIndex(indexInCommittee)
+					}
+
+					dutyResponse.Committee = append(dutyResponse.Committee, types.ValidatorIndex(uintCommitteeValidatorIndex))
 				}
 			}
 		}
