@@ -524,22 +524,12 @@ func (c *beaconApiValidatorClient) getDuties(epoch uint64, pubkeys [][]byte) ([]
 		indicesMapping[uint64(validatorIndex)] = &ethpb.DutiesResponse_Duty{}
 	}
 
+	// Get the attester duties
 	attesterDutiesJson, err := c.getAttesterDuties(epoch, validatorStringIndices)
 	if err != nil {
 		return nil, err
 	}
 
-	proposerDutiesJson, err := c.getProposerDuties(epoch)
-	if err != nil {
-		return nil, err
-	}
-
-	syncDutiesJson, err := c.getSyncDuties(epoch, validatorStringIndices)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the attester duties
 	for _, attesterDutyData := range attesterDutiesJson.Data {
 		validatorIndex, err := strconv.ParseUint(attesterDutyData.ValidatorIndex, 10, 64)
 		if err != nil {
@@ -559,6 +549,11 @@ func (c *beaconApiValidatorClient) getDuties(epoch uint64, pubkeys [][]byte) ([]
 	}
 
 	// Get the proposer duties
+	proposerDutiesJson, err := c.getProposerDuties(epoch)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, proposerDutyData := range proposerDutiesJson.Data {
 		validatorIndex, err := strconv.ParseUint(proposerDutyData.ValidatorIndex, 10, 64)
 		if err != nil {
@@ -576,23 +571,36 @@ func (c *beaconApiValidatorClient) getDuties(epoch uint64, pubkeys [][]byte) ([]
 	}
 
 	// Get the sync duties
-	for _, dutyData := range syncDutiesJson.Data {
-		validatorIndex, err := strconv.ParseUint(dutyData.ValidatorIndex, 10, 64)
+	forkVersion, err := c.getForkVersion()
+	if err != nil {
+		return nil, err
+	}
+
+	// Phase0 doesn't have sync committees
+	if forkVersion != "phase0" {
+		syncDutiesJson, err := c.getSyncDuties(epoch, validatorStringIndices)
 		if err != nil {
 			return nil, err
 		}
 
-		if dutyResponse, exists := indicesMapping[validatorIndex]; exists {
-			dutyResponse.PublicKey = []byte(dutyData.Pubkey)
-			dutyResponse.IsSyncCommittee = true
+		for _, dutyData := range syncDutiesJson.Data {
+			validatorIndex, err := strconv.ParseUint(dutyData.ValidatorIndex, 10, 64)
+			if err != nil {
+				return nil, err
+			}
 
-			for _, committeeIndex := range dutyData.ValidatorSyncCommitteeIndices {
-				uintCommitteeIndex, err := strconv.ParseUint(committeeIndex, 10, 64)
-				if err != nil {
-					return nil, err
+			if dutyResponse, exists := indicesMapping[validatorIndex]; exists {
+				dutyResponse.PublicKey = []byte(dutyData.Pubkey)
+				dutyResponse.IsSyncCommittee = true
+
+				for _, committeeIndex := range dutyData.ValidatorSyncCommitteeIndices {
+					uintCommitteeIndex, err := strconv.ParseUint(committeeIndex, 10, 64)
+					if err != nil {
+						return nil, err
+					}
+
+					dutyResponse.Committee = append(dutyResponse.Committee, types.ValidatorIndex(uintCommitteeIndex))
 				}
-
-				dutyResponse.Committee = append(dutyResponse.Committee, types.ValidatorIndex(uintCommitteeIndex))
 			}
 		}
 	}
@@ -613,6 +621,37 @@ func (c *beaconApiValidatorClient) getDuties(epoch uint64, pubkeys [][]byte) ([]
 	}
 
 	return duties, nil
+}
+
+func (c *beaconApiValidatorClient) getForkVersion() (string, error) {
+	// Query the last block to get the fork version
+	resp, err := c.httpClient.Get(c.url + "/eth/v2/beacon/blocks/head")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err = resp.Body.Close(); err != nil {
+			return
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		errorJson := ErrorResponseJson{}
+		err = json.NewDecoder(resp.Body).Decode(&errorJson)
+		if err != nil {
+			return "", err
+		}
+
+		return "", errors.Errorf("error %d: %s", errorJson.Code, errorJson.Message)
+	}
+
+	blockV2ResponseJson := BlockV2ResponseJson{}
+	err = json.NewDecoder(resp.Body).Decode(&blockV2ResponseJson)
+	if err != nil {
+		return "", err
+	}
+
+	return blockV2ResponseJson.Version, nil
 }
 
 func parseValidatorStatusResponse(responseData *ValidatorContainerJson, activationQueue *StateValidatorsResponseJson) (*ethpb.ValidatorStatusResponse, error) {
