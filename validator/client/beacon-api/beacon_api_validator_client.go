@@ -141,6 +141,7 @@ func (c *beaconApiValidatorClient) GetAttestationData(_ context.Context, in *eth
 		response.Target.Root = targetRoot
 	}
 
+	return response, nil
 }
 
 func (*beaconApiValidatorClient) GetBeaconBlock(_ context.Context, _ *ethpb.BlockRequest) (*ethpb.GenericBeaconBlock, error) {
