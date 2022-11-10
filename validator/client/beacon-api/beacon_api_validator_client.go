@@ -204,7 +204,8 @@ func (c *beaconApiValidatorClient) WaitForChainStart(_ context.Context, _ *empty
 	chainStartResponse.Started = true
 	chainStartResponse.GenesisTime = genesisTime
 
-	genesisValidatorRoot, err := hex.DecodeString(genesisJson.Data.GenesisValidatorsRoot)
+	// Remove the leading 0x from the string before decoding it to bytes
+	genesisValidatorRoot, err := hex.DecodeString(genesisJson.Data.GenesisValidatorsRoot[2:])
 	if err != nil {
 		return nil, err
 	}
