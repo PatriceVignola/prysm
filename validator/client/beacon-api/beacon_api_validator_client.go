@@ -88,7 +88,59 @@ func (c *beaconApiValidatorClient) GetAttestationData(_ context.Context, in *eth
 	}
 
 	response := &ethpb.AttestationData{}
-	response.BeaconBlockRoot = blockAttestationsResponseJson.Data
+
+	for _, attestationJson := range blockAttestationsResponseJson.Data {
+		committeeIndex, err := strconv.ParseUint(attestationJson.Data.CommitteeIndex, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		if committeeIndex != uint64(in.CommitteeIndex) {
+			continue
+		}
+
+		// Remove the leading 0x from the string before decoding it to bytes
+		beaconBlockRoot, err := hex.DecodeString(attestationJson.Data.BeaconBlockRoot[2:])
+		if err != nil {
+			return nil, err
+		}
+
+		slot, err := strconv.ParseUint(attestationJson.Data.Slot, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		sourceEpoch, err := strconv.ParseUint(attestationJson.Data.Source.Epoch, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		// Remove the leading 0x from the string before decoding it to bytes
+		sourceRoot, err := hex.DecodeString(attestationJson.Data.Source.Root[2:])
+		if err != nil {
+			return nil, err
+		}
+
+		targetEpoch, err := strconv.ParseUint(attestationJson.Data.Target.Epoch, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		// Remove the leading 0x from the string before decoding it to bytes
+		targetRoot, err := hex.DecodeString(attestationJson.Data.Target.Root[2:])
+		if err != nil {
+			return nil, err
+		}
+
+		response.BeaconBlockRoot = beaconBlockRoot
+		response.CommitteeIndex = types.CommitteeIndex(committeeIndex)
+		response.Slot = types.Slot(slot)
+		response.Source.Epoch = types.Epoch(sourceEpoch)
+		response.Source.Root = sourceRoot
+		response.Target.Epoch = types.Epoch(targetEpoch)
+		response.Target.Root = targetRoot
+	}
+
 }
 
 func (*beaconApiValidatorClient) GetBeaconBlock(_ context.Context, _ *ethpb.BlockRequest) (*ethpb.GenericBeaconBlock, error) {
