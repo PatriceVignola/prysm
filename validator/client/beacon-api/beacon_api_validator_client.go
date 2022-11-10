@@ -23,8 +23,12 @@ import (
 )
 
 type beaconApiValidatorClient struct {
-	address    string
+	url        string
 	httpClient http.Client
+}
+
+func NewBeaconApiValidatorClient(url string, timeout time.Duration) iface.ValidatorClient {
+	return &beaconApiValidatorClient{url, http.Client{Timeout: timeout}}
 }
 
 func (c *beaconApiValidatorClient) GetDuties(_ context.Context, in *ethpb.DutiesRequest) (*ethpb.DutiesResponse, error) {
@@ -165,7 +169,7 @@ func (*beaconApiValidatorClient) WaitForActivation(_ context.Context, _ *ethpb.V
 
 // Deprecated: Do not use.
 func (c *beaconApiValidatorClient) WaitForChainStart(_ context.Context, _ *empty.Empty) (*ethpb.ChainStartResponse, error) {
-	resp, err := c.httpClient.Get(c.address + "/eth/v1/beacon/genesis")
+	resp, err := c.httpClient.Get(c.url + "/eth/v1/beacon/genesis")
 	if err != nil {
 		return nil, err
 	}
@@ -199,20 +203,18 @@ func (c *beaconApiValidatorClient) WaitForChainStart(_ context.Context, _ *empty
 	chainStartResponse := &ethpb.ChainStartResponse{}
 	chainStartResponse.Started = true
 	chainStartResponse.GenesisTime = genesisTime
-	chainStartResponse.GenesisValidatorsRoot = []byte(genesisJson.Data.GenesisValidatorsRoot)
+
+	genesisValidatorRoot, err := hex.DecodeString(genesisJson.Data.GenesisValidatorsRoot)
+	if err != nil {
+		return nil, err
+	}
+	chainStartResponse.GenesisValidatorsRoot = genesisValidatorRoot
 
 	return chainStartResponse, nil
 }
 
-func NewBeaconApiValidatorClient() iface.ValidatorClient {
-	// TODO: Take the address and client as arguments
-	return &beaconApiValidatorClient{"http://127.0.0.1:3500", http.Client{
-		Timeout: 120 * time.Second,
-	}}
-}
-
 func (c *beaconApiValidatorClient) getValidatorStatus(pubkey []byte) (*ethpb.ValidatorStatusResponse, error) {
-	resp, err := c.httpClient.Get(c.address + "/eth/v1/beacon/states/head/validators/0x" + hex.EncodeToString(pubkey))
+	resp, err := c.httpClient.Get(c.url + "/eth/v1/beacon/states/head/validators/0x" + hex.EncodeToString(pubkey))
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +254,7 @@ func (c *beaconApiValidatorClient) getValidatorStatus(pubkey []byte) (*ethpb.Val
 }
 
 func (c *beaconApiValidatorClient) getMultipleValidatorStatus(pubkeys [][]byte, indices []int64) (*ethpb.MultipleValidatorStatusResponse, error) {
-	query := c.address + "/eth/v1/beacon/states/head/validators"
+	query := c.url + "/eth/v1/beacon/states/head/validators"
 
 	if len(indices) > 0 || len(pubkeys) > 0 {
 		var queryArgs strings.Builder
@@ -286,7 +288,6 @@ func (c *beaconApiValidatorClient) getMultipleValidatorStatus(pubkeys [][]byte, 
 					return nil, err
 				}
 			}
-			break
 		}
 
 		query += queryArgs.String()
@@ -346,7 +347,7 @@ func (c *beaconApiValidatorClient) getMultipleValidatorStatus(pubkeys [][]byte, 
 
 // Returns the index of the next validator to be activated, or nil if the activation queue is empty
 func (c *beaconApiValidatorClient) getActivationQueue() (*StateValidatorsResponseJson, error) {
-	resp, err := c.httpClient.Get(c.address + "/eth/v1/beacon/states/head/validators?status=pending_queued")
+	resp, err := c.httpClient.Get(c.url + "/eth/v1/beacon/states/head/validators?status=pending_queued")
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +414,7 @@ func (c *beaconApiValidatorClient) getAttesterDuties(epoch uint64, validatorIndi
 		return nil, err
 	}
 
-	query := c.address + "/eth/v1/validator/duties/attester/" + strconv.FormatUint(epoch, 10)
+	query := c.url + "/eth/v1/validator/duties/attester/" + strconv.FormatUint(epoch, 10)
 	resp, err := c.httpClient.Post(query, "application/json", bytes.NewBuffer(jsonIndices))
 	if err != nil {
 		return nil, err
@@ -444,7 +445,7 @@ func (c *beaconApiValidatorClient) getAttesterDuties(epoch uint64, validatorIndi
 }
 
 func (c *beaconApiValidatorClient) getProposerDuties(epoch uint64) (*ProposerDutiesResponseJson, error) {
-	resp, err := c.httpClient.Get(c.address + "/eth/v1/validator/duties/proposer/" + strconv.FormatUint(epoch, 10))
+	resp, err := c.httpClient.Get(c.url + "/eth/v1/validator/duties/proposer/" + strconv.FormatUint(epoch, 10))
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +480,7 @@ func (c *beaconApiValidatorClient) getSyncDuties(epoch uint64, validatorIndices 
 		return nil, err
 	}
 
-	query := c.address + "/eth/v1/validator/duties/sync/" + strconv.FormatUint(epoch, 10)
+	query := c.url + "/eth/v1/validator/duties/sync/" + strconv.FormatUint(epoch, 10)
 	resp, err := c.httpClient.Post(query, "application/json", bytes.NewBuffer(jsonIndices))
 	if err != nil {
 		return nil, err

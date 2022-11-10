@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/pkg/errors"
 	corehelpers "github.com/prysmaticlabs/prysm/v3/beacon-chain/core/helpers"
@@ -21,6 +22,7 @@ import (
 	e2etypes "github.com/prysmaticlabs/prysm/v3/testing/endtoend/types"
 	"github.com/prysmaticlabs/prysm/v3/testing/util"
 	validatorClientFactory "github.com/prysmaticlabs/prysm/v3/validator/client/validator-client-factory"
+	validatorHelpers "github.com/prysmaticlabs/prysm/v3/validator/helpers"
 	"golang.org/x/exp/rand"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -282,9 +284,11 @@ func depositedValidatorsAreActive(conns ...*grpc.ClientConn) error {
 	return nil
 }
 
+// TODO: pass validatorHelpers.NodeConnection as a parameter once the Beacon API usage becomes more stable
 func proposeVoluntaryExit(conns ...*grpc.ClientConn) error {
 	conn := conns[0]
-	valClient := validatorClientFactory.NewValidatorClient(conn)
+	validatorConn := validatorHelpers.NewNodeConnection(conn, fmt.Sprintf("http://127.0.0.1:%d", e2e.TestParams.Ports.PrysmBeaconNodeGatewayPort), 30*time.Second)
+	valClient := validatorClientFactory.NewValidatorClient(validatorConn)
 	beaconClient := ethpb.NewBeaconChainClient(conn)
 
 	ctx := context.Background()
