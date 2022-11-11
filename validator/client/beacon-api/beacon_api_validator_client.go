@@ -214,9 +214,287 @@ func (*beaconApiValidatorClient) ProposeAttestation(_ context.Context, _ *ethpb.
 	panic("beaconApiValidatorClient.ProposeAttestation is not implemented")
 }
 
-func (*beaconApiValidatorClient) ProposeBeaconBlock(_ context.Context, _ *ethpb.GenericSignedBeaconBlock) (*ethpb.ProposeResponse, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.ProposeBeaconBlock is not implemented")
+func (c *beaconApiValidatorClient) ProposeBeaconBlock(_ context.Context, in *ethpb.GenericSignedBeaconBlock) (*ethpb.ProposeResponse, error) {
+	var consensusVersion string
+	var signature []byte
+	var beaconBlockRoot []byte
+
+	var err error
+	var marshalledSignedBeaconBlockJson []byte
+	blinded := false
+
+	switch blockType := in.Block.(type) {
+	case *ethpb.GenericSignedBeaconBlock_Phase0:
+		consensusVersion = "phase0"
+		if len(blockType.Phase0.Block.Body.Attestations) > 0 {
+			beaconBlockRoot = blockType.Phase0.Block.Body.Attestations[0].Data.BeaconBlockRoot
+		}
+
+		signedBeaconBlockJson := &SignedBeaconBlockContainerJson{}
+		signedBeaconBlockJson.Message.Body = jsonifyBeaconBlockBody(blockType.Phase0.Block.Body)
+		signedBeaconBlockJson.Message.ParentRoot = "0x" + hex.EncodeToString(blockType.Phase0.Block.ParentRoot)
+		signedBeaconBlockJson.Message.ProposerIndex = strconv.FormatUint(uint64(blockType.Phase0.Block.ProposerIndex), 10)
+		signedBeaconBlockJson.Message.Slot = strconv.FormatUint(uint64(blockType.Phase0.Block.Slot), 10)
+		signedBeaconBlockJson.Message.StateRoot = "0x" + hex.EncodeToString(blockType.Phase0.Block.StateRoot)
+		signedBeaconBlockJson.Signature = "0x" + hex.EncodeToString(signature)
+		marshalledSignedBeaconBlockJson, err = json.Marshal(signedBeaconBlockJson)
+		if err != nil {
+			return nil, err
+		}
+	case *ethpb.GenericSignedBeaconBlock_Altair:
+		consensusVersion = "altair"
+		if len(blockType.Altair.Block.Body.Attestations) > 0 {
+			beaconBlockRoot = blockType.Altair.Block.Body.Attestations[0].Data.BeaconBlockRoot
+		}
+
+		// Convert the phase0 fields of Altair to a BeaconBlockBody to be able to reuse jsonifyBeaconBlockBody
+		beaconBlockBody := &ethpb.BeaconBlockBody{}
+		signature = blockType.Altair.Signature
+		beaconBlockBody.RandaoReveal = blockType.Altair.Block.Body.RandaoReveal
+		beaconBlockBody.Eth1Data = blockType.Altair.Block.Body.Eth1Data
+		beaconBlockBody.Graffiti = blockType.Altair.Block.Body.Graffiti
+		beaconBlockBody.ProposerSlashings = blockType.Altair.Block.Body.ProposerSlashings
+		beaconBlockBody.AttesterSlashings = blockType.Altair.Block.Body.AttesterSlashings
+		beaconBlockBody.Attestations = blockType.Altair.Block.Body.Attestations
+		beaconBlockBody.Deposits = blockType.Altair.Block.Body.Deposits
+		beaconBlockBody.VoluntaryExits = blockType.Altair.Block.Body.VoluntaryExits
+		signedBeaconBlockAltairJson := &SignedBeaconBlockAltairContainerJson{}
+		signedBeaconBlockAltairJson.Signature = "0x" + hex.EncodeToString(signature)
+		signedBeaconBlockAltairJson.Message.ParentRoot = "0x" + hex.EncodeToString(blockType.Altair.Block.ParentRoot)
+		signedBeaconBlockAltairJson.Message.ProposerIndex = strconv.FormatUint(uint64(blockType.Altair.Block.ProposerIndex), 10)
+		signedBeaconBlockAltairJson.Message.Slot = strconv.FormatUint(uint64(blockType.Altair.Block.Slot), 10)
+		signedBeaconBlockAltairJson.Message.StateRoot = "0x" + hex.EncodeToString(blockType.Altair.Block.StateRoot)
+		signedBeaconBlockAltairJson.Message.Body.BeaconBlockBodyJson = *jsonifyBeaconBlockBody(beaconBlockBody)
+		signedBeaconBlockAltairJson.Message.Body.SyncAggregate.SyncCommitteeBits = "0x" + hex.EncodeToString(blockType.Altair.Block.Body.SyncAggregate.SyncCommitteeBits)
+		signedBeaconBlockAltairJson.Message.Body.SyncAggregate.SyncCommitteeSignature = "0x" + hex.EncodeToString(blockType.Altair.Block.Body.SyncAggregate.SyncCommitteeSignature)
+		marshalledSignedBeaconBlockJson, err = json.Marshal(signedBeaconBlockAltairJson)
+		if err != nil {
+			return nil, err
+		}
+	case *ethpb.GenericSignedBeaconBlock_Bellatrix:
+		consensusVersion = "bellatrix"
+		if len(blockType.Bellatrix.Block.Body.Attestations) > 0 {
+			beaconBlockRoot = blockType.Bellatrix.Block.Body.Attestations[0].Data.BeaconBlockRoot
+		}
+
+		// Convert the phase0 fields of Bellatrix to a BeaconBlockBody to be able to reuse jsonifyBeaconBlockBody
+		beaconBlockBody := &ethpb.BeaconBlockBody{}
+		signature = blockType.Bellatrix.Signature
+		beaconBlockBody.RandaoReveal = blockType.Bellatrix.Block.Body.RandaoReveal
+		beaconBlockBody.Eth1Data = blockType.Bellatrix.Block.Body.Eth1Data
+		beaconBlockBody.Graffiti = blockType.Bellatrix.Block.Body.Graffiti
+		beaconBlockBody.ProposerSlashings = blockType.Bellatrix.Block.Body.ProposerSlashings
+		beaconBlockBody.AttesterSlashings = blockType.Bellatrix.Block.Body.AttesterSlashings
+		beaconBlockBody.Attestations = blockType.Bellatrix.Block.Body.Attestations
+		beaconBlockBody.Deposits = blockType.Bellatrix.Block.Body.Deposits
+		beaconBlockBody.VoluntaryExits = blockType.Bellatrix.Block.Body.VoluntaryExits
+		signedBeaconBlockBellatrixJson := &SignedBeaconBlockBellatrixContainerJson{}
+		signedBeaconBlockBellatrixJson.Signature = "0x" + hex.EncodeToString(signature)
+		signedBeaconBlockBellatrixJson.Message.ParentRoot = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.ParentRoot)
+		signedBeaconBlockBellatrixJson.Message.ProposerIndex = strconv.FormatUint(uint64(blockType.Bellatrix.Block.ProposerIndex), 10)
+		signedBeaconBlockBellatrixJson.Message.Slot = strconv.FormatUint(uint64(blockType.Bellatrix.Block.Slot), 10)
+		signedBeaconBlockBellatrixJson.Message.StateRoot = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.StateRoot)
+		signedBeaconBlockBellatrixJson.Message.Body.BeaconBlockBodyJson = *jsonifyBeaconBlockBody(beaconBlockBody)
+		signedBeaconBlockBellatrixJson.Message.Body.SyncAggregate.SyncCommitteeBits = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.Body.SyncAggregate.SyncCommitteeBits)
+		signedBeaconBlockBellatrixJson.Message.Body.SyncAggregate.SyncCommitteeSignature = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.Body.SyncAggregate.SyncCommitteeSignature)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.BaseFeePerGas = string(blockType.Bellatrix.Block.Body.ExecutionPayload.BaseFeePerGas)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.BlockHash = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.Body.ExecutionPayload.BlockHash)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.BlockNumber = strconv.FormatUint(blockType.Bellatrix.Block.Body.ExecutionPayload.BlockNumber, 10)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.ExtraData = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.Body.ExecutionPayload.ExtraData)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.FeeRecipient = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.Body.ExecutionPayload.FeeRecipient)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.GasLimit = strconv.FormatUint(blockType.Bellatrix.Block.Body.ExecutionPayload.GasLimit, 10)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.GasUsed = strconv.FormatUint(blockType.Bellatrix.Block.Body.ExecutionPayload.GasUsed, 10)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.LogsBloom = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.Body.ExecutionPayload.LogsBloom)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.ParentHash = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.Body.ExecutionPayload.ParentHash)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.PrevRandao = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.Body.ExecutionPayload.PrevRandao)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.ReceiptsRoot = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.Body.ExecutionPayload.ReceiptsRoot)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.StateRoot = "0x" + hex.EncodeToString(blockType.Bellatrix.Block.Body.ExecutionPayload.StateRoot)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.TimeStamp = strconv.FormatUint(blockType.Bellatrix.Block.Body.ExecutionPayload.Timestamp, 10)
+
+		for _, transaction := range blockType.Bellatrix.Block.Body.ExecutionPayload.Transactions {
+			transactionJson := "0x" + hex.EncodeToString(transaction)
+			signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.Transactions = append(signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayload.Transactions, transactionJson)
+		}
+
+		marshalledSignedBeaconBlockJson, err = json.Marshal(signedBeaconBlockBellatrixJson)
+		if err != nil {
+			return nil, err
+		}
+	case *ethpb.GenericSignedBeaconBlock_BlindedBellatrix:
+		blinded = true
+		consensusVersion = "bellatrix"
+		if len(blockType.BlindedBellatrix.Block.Body.Attestations) > 0 {
+			beaconBlockRoot = blockType.BlindedBellatrix.Block.Body.Attestations[0].Data.BeaconBlockRoot
+		}
+
+		// Convert the phase0 fields of BlindedBellatrix to a BeaconBlockBody to be able to reuse jsonifyBeaconBlockBody
+		beaconBlockBody := &ethpb.BeaconBlockBody{}
+		signature = blockType.BlindedBellatrix.Signature
+		beaconBlockBody.RandaoReveal = blockType.BlindedBellatrix.Block.Body.RandaoReveal
+		beaconBlockBody.Eth1Data = blockType.BlindedBellatrix.Block.Body.Eth1Data
+		beaconBlockBody.Graffiti = blockType.BlindedBellatrix.Block.Body.Graffiti
+		beaconBlockBody.ProposerSlashings = blockType.BlindedBellatrix.Block.Body.ProposerSlashings
+		beaconBlockBody.AttesterSlashings = blockType.BlindedBellatrix.Block.Body.AttesterSlashings
+		beaconBlockBody.Attestations = blockType.BlindedBellatrix.Block.Body.Attestations
+		beaconBlockBody.Deposits = blockType.BlindedBellatrix.Block.Body.Deposits
+		beaconBlockBody.VoluntaryExits = blockType.BlindedBellatrix.Block.Body.VoluntaryExits
+		signedBeaconBlockBellatrixJson := &SignedBlindedBeaconBlockBellatrixContainerJson{}
+		signedBeaconBlockBellatrixJson.Signature = "0x" + hex.EncodeToString(signature)
+		signedBeaconBlockBellatrixJson.Message.ParentRoot = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.ParentRoot)
+		signedBeaconBlockBellatrixJson.Message.ProposerIndex = strconv.FormatUint(uint64(blockType.BlindedBellatrix.Block.ProposerIndex), 10)
+		signedBeaconBlockBellatrixJson.Message.Slot = strconv.FormatUint(uint64(blockType.BlindedBellatrix.Block.Slot), 10)
+		signedBeaconBlockBellatrixJson.Message.StateRoot = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.StateRoot)
+		signedBeaconBlockBellatrixJson.Message.Body.BeaconBlockBodyJson = *jsonifyBeaconBlockBody(beaconBlockBody)
+		signedBeaconBlockBellatrixJson.Message.Body.SyncAggregate.SyncCommitteeBits = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.Body.SyncAggregate.SyncCommitteeBits)
+		signedBeaconBlockBellatrixJson.Message.Body.SyncAggregate.SyncCommitteeSignature = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.Body.SyncAggregate.SyncCommitteeSignature)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.BaseFeePerGas = string(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.BaseFeePerGas)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.BlockHash = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.BlockHash)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.BlockNumber = strconv.FormatUint(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.BlockNumber, 10)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.ExtraData = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.ExtraData)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.FeeRecipient = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.FeeRecipient)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.GasLimit = strconv.FormatUint(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.GasLimit, 10)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.GasUsed = strconv.FormatUint(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.GasUsed, 10)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.LogsBloom = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.LogsBloom)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.ParentHash = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.ParentHash)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.PrevRandao = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.PrevRandao)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.ReceiptsRoot = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.ReceiptsRoot)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.StateRoot = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.StateRoot)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.TimeStamp = strconv.FormatUint(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.Timestamp, 10)
+		signedBeaconBlockBellatrixJson.Message.Body.ExecutionPayloadHeader.TransactionsRoot = "0x" + hex.EncodeToString(blockType.BlindedBellatrix.Block.Body.ExecutionPayloadHeader.TransactionsRoot)
+
+		marshalledSignedBeaconBlockJson, err = json.Marshal(signedBeaconBlockBellatrixJson)
+		if err != nil {
+			return nil, err
+		}
+	case *ethpb.GenericSignedBeaconBlock_BlindedCapella:
+		return nil, errors.Errorf("BlindedCapella blocks are not supported yet")
+	case *ethpb.GenericSignedBeaconBlock_Capella:
+		return nil, errors.Errorf("Capella blocks are not supported yet")
+	default:
+		return nil, errors.Errorf("unsupported block type")
+	}
+
+	var url string
+
+	if blinded {
+		url = c.url + "/eth/v1/beacon/blinded_blocks"
+	} else {
+		url = c.url + "/eth/v1/beacon/blocks"
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(marshalledSignedBeaconBlockJson))
+	req.Header.Set("Eth-Consensus-Version", consensusVersion)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err = resp.Body.Close(); err != nil {
+			return
+		}
+	}()
+
+	// This endpoint returns status 202 (StatusAccepted) when broadcast succeeded but block validation failed
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		errorJson := ErrorResponseJson{}
+		err = json.NewDecoder(resp.Body).Decode(&errorJson)
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, errors.Errorf("error %d: %s", errorJson.Code, errorJson.Message)
+	}
+
+	return &ethpb.ProposeResponse{BlockRoot: beaconBlockRoot}, nil
+}
+
+func jsonifyBeaconBlockBody(beaconBlockBody *ethpb.BeaconBlockBody) *BeaconBlockBodyJson {
+	beaconBlockBodyJson := &BeaconBlockBodyJson{}
+
+	for _, attestation := range beaconBlockBody.Attestations {
+		attestationJson := &AttestationJson{}
+		attestationJson.AggregationBits = "0x" + hex.EncodeToString(attestation.AggregationBits)
+		attestationJson.Data = jsonifyAttestationData(attestation.Data)
+		attestationJson.Signature = "0x" + hex.EncodeToString(attestation.Signature)
+		beaconBlockBodyJson.Attestations = append(beaconBlockBodyJson.Attestations, attestationJson)
+	}
+
+	for _, attesterSlashing := range beaconBlockBody.AttesterSlashings {
+		attesterSlashingJson := &AttesterSlashingJson{}
+		attesterSlashingJson.Attestation_1 = jsonifyIndexedAttestation(attesterSlashing.Attestation_1)
+		attesterSlashingJson.Attestation_2 = jsonifyIndexedAttestation(attesterSlashing.Attestation_2)
+		beaconBlockBodyJson.AttesterSlashings = append(beaconBlockBodyJson.AttesterSlashings, attesterSlashingJson)
+	}
+
+	for _, deposit := range beaconBlockBody.Deposits {
+		depositJson := &DepositJson{}
+		depositJson.Data.Amount = strconv.FormatUint(deposit.Data.Amount, 10)
+		depositJson.Data.PublicKey = "0x" + hex.EncodeToString(deposit.Data.PublicKey)
+		depositJson.Data.Signature = "0x" + hex.EncodeToString(deposit.Data.Signature)
+		depositJson.Data.WithdrawalCredentials = "0x" + hex.EncodeToString(deposit.Data.WithdrawalCredentials)
+		for _, proof := range deposit.Proof {
+			depositJson.Proof = append(depositJson.Proof, "0x"+hex.EncodeToString(proof))
+		}
+		beaconBlockBodyJson.Deposits = append(beaconBlockBodyJson.Deposits, depositJson)
+	}
+
+	beaconBlockBodyJson.Eth1Data.BlockHash = "0x" + hex.EncodeToString(beaconBlockBody.Eth1Data.BlockHash)
+	beaconBlockBodyJson.Eth1Data.DepositCount = strconv.FormatUint(beaconBlockBody.Eth1Data.DepositCount, 10)
+	beaconBlockBodyJson.Eth1Data.DepositRoot = "0x" + hex.EncodeToString(beaconBlockBody.Eth1Data.DepositRoot)
+	beaconBlockBodyJson.Graffiti = string(beaconBlockBody.Graffiti)
+
+	for _, proposerSlashing := range beaconBlockBody.ProposerSlashings {
+		proposerSlashingJson := &ProposerSlashingJson{}
+		proposerSlashingJson.Header_1 = jsonifySignedBeaconBlockHeader(proposerSlashing.Header_1)
+		proposerSlashingJson.Header_2 = jsonifySignedBeaconBlockHeader(proposerSlashing.Header_2)
+		beaconBlockBodyJson.ProposerSlashings = append(beaconBlockBodyJson.ProposerSlashings, proposerSlashingJson)
+	}
+
+	beaconBlockBodyJson.RandaoReveal = "0x" + hex.EncodeToString(beaconBlockBody.RandaoReveal)
+
+	for _, signedVoluntaryExit := range beaconBlockBody.VoluntaryExits {
+		signedVoluntaryExitJson := &SignedVoluntaryExitJson{}
+		signedVoluntaryExitJson.Exit.Epoch = strconv.FormatUint(uint64(signedVoluntaryExit.Exit.Epoch), 10)
+		signedVoluntaryExitJson.Exit.ValidatorIndex = strconv.FormatUint(uint64(signedVoluntaryExit.Exit.ValidatorIndex), 10)
+		signedVoluntaryExitJson.Signature = "0x" + hex.EncodeToString(signedVoluntaryExit.Signature)
+		beaconBlockBodyJson.VoluntaryExits = append(beaconBlockBodyJson.VoluntaryExits, signedVoluntaryExitJson)
+	}
+
+	return beaconBlockBodyJson
+}
+
+func jsonifyAttestationData(attestationData *ethpb.AttestationData) *AttestationDataJson {
+	attestationDataJson := &AttestationDataJson{}
+	attestationDataJson.BeaconBlockRoot = "0x" + hex.EncodeToString(attestationData.BeaconBlockRoot)
+	attestationDataJson.CommitteeIndex = strconv.FormatUint(uint64(attestationData.CommitteeIndex), 10)
+	attestationDataJson.Slot = strconv.FormatUint(uint64(attestationData.Slot), 10)
+	attestationDataJson.Source.Epoch = strconv.FormatUint(uint64(attestationData.Source.Epoch), 10)
+	attestationDataJson.Source.Root = "0x" + hex.EncodeToString(attestationData.Source.Root)
+	attestationDataJson.Target.Epoch = strconv.FormatUint(uint64(attestationData.Target.Epoch), 10)
+	attestationDataJson.Target.Root = "0x" + hex.EncodeToString(attestationData.Target.Root)
+	return attestationDataJson
+}
+
+func jsonifyIndexedAttestation(indexedAttestation *ethpb.IndexedAttestation) *IndexedAttestationJson {
+	indexedAttestationJson := &IndexedAttestationJson{}
+	for _, attestingIndex := range indexedAttestation.AttestingIndices {
+		attestingIndex := strconv.FormatUint(attestingIndex, 10)
+		indexedAttestationJson.AttestingIndices = append(indexedAttestationJson.AttestingIndices, attestingIndex)
+	}
+	indexedAttestationJson.Data = jsonifyAttestationData(indexedAttestation.Data)
+	indexedAttestationJson.Signature = "0x" + hex.EncodeToString(indexedAttestation.Signature)
+	return indexedAttestationJson
+}
+
+func jsonifySignedBeaconBlockHeader(signedBeaconBlockHeader *ethpb.SignedBeaconBlockHeader) *SignedBeaconBlockHeaderJson {
+	signedBeaconBlockHeaderJson := &SignedBeaconBlockHeaderJson{}
+	signedBeaconBlockHeaderJson.Header.BodyRoot = "0x" + hex.EncodeToString(signedBeaconBlockHeader.Header.BodyRoot)
+	signedBeaconBlockHeaderJson.Header.ParentRoot = "0x" + hex.EncodeToString(signedBeaconBlockHeader.Header.ParentRoot)
+	signedBeaconBlockHeaderJson.Header.ProposerIndex = strconv.FormatUint(uint64(signedBeaconBlockHeader.Header.ProposerIndex), 10)
+	signedBeaconBlockHeaderJson.Header.Slot = strconv.FormatUint(uint64(signedBeaconBlockHeader.Header.Slot), 10)
+	signedBeaconBlockHeaderJson.Header.StateRoot = "0x" + hex.EncodeToString(signedBeaconBlockHeader.Header.StateRoot)
+	signedBeaconBlockHeaderJson.Signature = "0x" + hex.EncodeToString(signedBeaconBlockHeader.Signature)
+	return signedBeaconBlockHeaderJson
 }
 
 func (*beaconApiValidatorClient) ProposeExit(_ context.Context, _ *ethpb.SignedVoluntaryExit) (*ethpb.ProposeExitResponse, error) {
