@@ -438,9 +438,11 @@ func jsonifyBeaconBlockBody(beaconBlockBody *ethpb.BeaconBlockBody) *BeaconBlock
 		beaconBlockBodyJson.Deposits = append(beaconBlockBodyJson.Deposits, depositJson)
 	}
 
-	beaconBlockBodyJson.Eth1Data.BlockHash = "0x" + hex.EncodeToString(beaconBlockBody.Eth1Data.BlockHash)
-	beaconBlockBodyJson.Eth1Data.DepositCount = strconv.FormatUint(beaconBlockBody.Eth1Data.DepositCount, 10)
-	beaconBlockBodyJson.Eth1Data.DepositRoot = "0x" + hex.EncodeToString(beaconBlockBody.Eth1Data.DepositRoot)
+	beaconBlockBodyJson.Eth1Data = &Eth1DataJson{
+		BlockHash:    "0x" + hex.EncodeToString(beaconBlockBody.Eth1Data.BlockHash),
+		DepositCount: strconv.FormatUint(beaconBlockBody.Eth1Data.DepositCount, 10),
+		DepositRoot:  "0x" + hex.EncodeToString(beaconBlockBody.Eth1Data.DepositRoot),
+	}
 	beaconBlockBodyJson.Graffiti = string(beaconBlockBody.Graffiti)
 
 	for _, proposerSlashing := range beaconBlockBody.ProposerSlashings {
