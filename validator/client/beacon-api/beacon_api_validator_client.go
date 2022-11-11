@@ -55,9 +55,40 @@ func (*beaconApiValidatorClient) CheckDoppelGanger(_ context.Context, _ *ethpb.D
 	panic("beaconApiValidatorClient.CheckDoppelGanger is not implemented")
 }
 
-func (*beaconApiValidatorClient) DomainData(_ context.Context, _ *ethpb.DomainRequest) (*ethpb.DomainResponse, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.DomainData is not implemented")
+func (c *beaconApiValidatorClient) DomainData(_ context.Context, in *ethpb.DomainRequest) (*ethpb.DomainResponse, error) {
+	// 1. Get genesis_fork_version and genesis_validators_root from the Genesis call
+	genesis, err := c.getGenesis()
+	if err != nil {
+		return nil, err
+	}
+
+	// Remove the leading 0x from the string before decoding it to bytes
+	forkVersion, err := hex.DecodeString(genesis.Data.GenesisForkVersion[2:])
+	if err != nil {
+		return nil, err
+	}
+
+	genesisValidatorRoot, err := hex.DecodeString(genesis.Data.GenesisValidatorsRoot[2:])
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Compute hash_tree_root of genesis_fork_version and genesis_validators_root
+	forkDataRoot, err := (&ethpb.ForkData{
+		CurrentVersion:        forkVersion,
+		GenesisValidatorsRoot: genesisValidatorRoot,
+	}).HashTreeRoot()
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. Append the first 4 bytes of the domain type to the last 28 bytes of the fork data root
+	var signatureDomain []byte
+	signatureDomain = append(signatureDomain, in.Domain[:4]...)
+	signatureDomain = append(signatureDomain, forkDataRoot[:28]...)
+
+	response := &ethpb.DomainResponse{SignatureDomain: signatureDomain}
+	return response, nil
 }
 
 func (c *beaconApiValidatorClient) GetAttestationData(_ context.Context, in *ethpb.AttestationDataRequest) (*ethpb.AttestationData, error) {
@@ -249,6 +280,31 @@ func (*beaconApiValidatorClient) WaitForActivation(_ context.Context, _ *ethpb.V
 
 // Deprecated: Do not use.
 func (c *beaconApiValidatorClient) WaitForChainStart(_ context.Context, _ *empty.Empty) (*ethpb.ChainStartResponse, error) {
+	genesis, err := c.getGenesis()
+	if err != nil {
+		return nil, err
+	}
+
+	genesisTime, err := strconv.ParseUint(genesis.Data.GenesisTime, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	chainStartResponse := &ethpb.ChainStartResponse{}
+	chainStartResponse.Started = true
+	chainStartResponse.GenesisTime = genesisTime
+
+	// Remove the leading 0x from the string before decoding it to bytes
+	genesisValidatorRoot, err := hex.DecodeString(genesis.Data.GenesisValidatorsRoot[2:])
+	if err != nil {
+		return nil, err
+	}
+	chainStartResponse.GenesisValidatorsRoot = genesisValidatorRoot
+
+	return chainStartResponse, nil
+}
+
+func (c *beaconApiValidatorClient) getGenesis() (*GenesisResponseJson, error) {
 	resp, err := c.httpClient.Get(c.url + "/eth/v1/beacon/genesis")
 	if err != nil {
 		return nil, err
@@ -269,29 +325,13 @@ func (c *beaconApiValidatorClient) WaitForChainStart(_ context.Context, _ *empty
 		return nil, errors.Errorf("error %d: %s", errorJson.Code, errorJson.Message)
 	}
 
-	genesisJson := GenesisResponseJson{}
+	genesisJson := &GenesisResponseJson{}
 	err = json.NewDecoder(resp.Body).Decode(&genesisJson)
 	if err != nil {
 		return nil, err
 	}
 
-	genesisTime, err := strconv.ParseUint(genesisJson.Data.GenesisTime, 10, 64)
-	if err != nil {
-		return nil, err
-	}
-
-	chainStartResponse := &ethpb.ChainStartResponse{}
-	chainStartResponse.Started = true
-	chainStartResponse.GenesisTime = genesisTime
-
-	// Remove the leading 0x from the string before decoding it to bytes
-	genesisValidatorRoot, err := hex.DecodeString(genesisJson.Data.GenesisValidatorsRoot[2:])
-	if err != nil {
-		return nil, err
-	}
-	chainStartResponse.GenesisValidatorsRoot = genesisValidatorRoot
-
-	return chainStartResponse, nil
+	return genesisJson, nil
 }
 
 func (c *beaconApiValidatorClient) getValidatorStatus(pubkey []byte) (*ethpb.ValidatorStatusResponse, error) {
