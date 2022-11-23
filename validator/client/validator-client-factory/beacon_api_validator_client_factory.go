@@ -10,5 +10,5 @@ import (
 )
 
 func NewValidatorClient(validatorConn validatorHelpers.NodeConnection) iface.ValidatorClient {
-	return beaconApi.NewBeaconApiValidatorClient(validatorConn.GetBeaconApiUrl(), validatorConn.GetBeaconApiTimeout())
+	return beaconApi.NewBeaconApiValidatorClient(validatorConn.GetBeaconApiUrl(), validatorConn.GetBeaconApiTimeout(), validatorConn.GetGrpcClientConn())
 }

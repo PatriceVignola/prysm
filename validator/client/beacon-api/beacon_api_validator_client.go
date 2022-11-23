@@ -19,21 +19,28 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/prysm/v3/beacon-chain/rpc/apimiddleware"
+	"github.com/prysmaticlabs/prysm/v3/config/params"
 	types "github.com/prysmaticlabs/prysm/v3/consensus-types/primitives"
 	ethpb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
 	iface "github.com/prysmaticlabs/prysm/v3/validator/client/iface"
+	"google.golang.org/grpc"
 )
 
 type beaconApiValidatorClient struct {
-	url        string
-	httpClient http.Client
+	url                       string
+	httpClient                http.Client
+	beaconNodeValidatorClient ethpb.BeaconNodeValidatorClient
 }
 
-func NewBeaconApiValidatorClient(url string, timeout time.Duration) iface.ValidatorClient {
-	return &beaconApiValidatorClient{url, http.Client{Timeout: timeout}}
+func NewBeaconApiValidatorClient(url string, timeout time.Duration, cc grpc.ClientConnInterface) iface.ValidatorClient {
+	return &beaconApiValidatorClient{url, http.Client{Timeout: timeout}, ethpb.NewBeaconNodeValidatorClient(cc)}
 }
 
-func (c *beaconApiValidatorClient) GetDuties(_ context.Context, in *ethpb.DutiesRequest) (*ethpb.DutiesResponse, error) {
+func (c *beaconApiValidatorClient) GetDuties(ctx context.Context, in *ethpb.DutiesRequest) (*ethpb.DutiesResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.GetDuties(ctx, in)
+	}
+
 	currentEpochDuties, err := c.getDuties(uint64(in.Epoch), in.PublicKeys)
 	if err != nil {
 		return nil, err
@@ -51,19 +58,21 @@ func (c *beaconApiValidatorClient) GetDuties(_ context.Context, in *ethpb.Duties
 	return dutiesResponse, nil
 }
 
-func (*beaconApiValidatorClient) CheckDoppelGanger(_ context.Context, _ *ethpb.DoppelGangerRequest) (*ethpb.DoppelGangerResponse, error) {
+func (c *beaconApiValidatorClient) CheckDoppelGanger(ctx context.Context, in *ethpb.DoppelGangerRequest) (*ethpb.DoppelGangerResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.CheckDoppelGanger(ctx, in)
+	}
 	// TODO: Implement me
 	panic("beaconApiValidatorClient.CheckDoppelGanger is not implemented")
 }
 
-func (c *beaconApiValidatorClient) DomainData(_ context.Context, in *ethpb.DomainRequest) (*ethpb.DomainResponse, error) {
+func (c *beaconApiValidatorClient) DomainData(ctx context.Context, in *ethpb.DomainRequest) (*ethpb.DomainResponse, error) {
 	// 1. Get genesis_fork_version and genesis_validators_root from the Genesis call
 	genesis, err := c.getGenesis()
 	if err != nil {
 		return nil, err
 	}
 
-	// Remove the leading 0x from the string before decoding it to bytes
 	forkVersion, err := hex.DecodeString(genesis.Data.GenesisForkVersion[2:])
 	if err != nil {
 		return nil, err
@@ -88,11 +97,14 @@ func (c *beaconApiValidatorClient) DomainData(_ context.Context, in *ethpb.Domai
 	signatureDomain = append(signatureDomain, in.Domain[:4]...)
 	signatureDomain = append(signatureDomain, forkDataRoot[:28]...)
 
-	response := &ethpb.DomainResponse{SignatureDomain: signatureDomain}
-	return response, nil
+	return &ethpb.DomainResponse{SignatureDomain: signatureDomain}, nil
 }
 
-func (c *beaconApiValidatorClient) GetAttestationData(_ context.Context, in *ethpb.AttestationDataRequest) (*ethpb.AttestationData, error) {
+func (c *beaconApiValidatorClient) GetAttestationData(ctx context.Context, in *ethpb.AttestationDataRequest) (*ethpb.AttestationData, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.GetAttestationData(ctx, in)
+	}
+
 	resp, err := c.httpClient.Get(c.url + fmt.Sprintf("/eth/v1/beacon/blocks/%d/attestations", in.Slot))
 	if err != nil {
 		return nil, err
@@ -176,46 +188,75 @@ func (c *beaconApiValidatorClient) GetAttestationData(_ context.Context, in *eth
 	return response, nil
 }
 
-func (*beaconApiValidatorClient) GetBeaconBlock(_ context.Context, _ *ethpb.BlockRequest) (*ethpb.GenericBeaconBlock, error) {
+func (c *beaconApiValidatorClient) GetBeaconBlock(ctx context.Context, in *ethpb.BlockRequest) (*ethpb.GenericBeaconBlock, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.GetBeaconBlock(ctx, in)
+	}
 	// TODO: Implement me
 	panic("beaconApiValidatorClient.GetBeaconBlock is not implemented")
 }
 
-func (*beaconApiValidatorClient) GetFeeRecipientByPubKey(_ context.Context, _ *ethpb.FeeRecipientByPubKeyRequest) (*ethpb.FeeRecipientByPubKeyResponse, error) {
+func (c *beaconApiValidatorClient) GetFeeRecipientByPubKey(ctx context.Context, in *ethpb.FeeRecipientByPubKeyRequest) (*ethpb.FeeRecipientByPubKeyResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.GetFeeRecipientByPubKey(ctx, in)
+	}
 	// TODO: Implement me
 	panic("beaconApiValidatorClient.GetFeeRecipientByPubKey is not implemented")
 }
 
-func (*beaconApiValidatorClient) GetSyncCommitteeContribution(_ context.Context, _ *ethpb.SyncCommitteeContributionRequest) (*ethpb.SyncCommitteeContribution, error) {
+func (c *beaconApiValidatorClient) GetSyncCommitteeContribution(ctx context.Context, in *ethpb.SyncCommitteeContributionRequest) (*ethpb.SyncCommitteeContribution, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.GetSyncCommitteeContribution(ctx, in)
+	}
 	// TODO: Implement me
 	panic("beaconApiValidatorClient.GetSyncCommitteeContribution is not implemented")
 }
 
-func (*beaconApiValidatorClient) GetSyncMessageBlockRoot(_ context.Context, _ *empty.Empty) (*ethpb.SyncMessageBlockRootResponse, error) {
+func (c *beaconApiValidatorClient) GetSyncMessageBlockRoot(ctx context.Context, in *empty.Empty) (*ethpb.SyncMessageBlockRootResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.GetSyncMessageBlockRoot(ctx, in)
+	}
 	// TODO: Implement me
 	panic("beaconApiValidatorClient.GetSyncMessageBlockRoot is not implemented")
 }
 
-func (*beaconApiValidatorClient) GetSyncSubcommitteeIndex(_ context.Context, _ *ethpb.SyncSubcommitteeIndexRequest) (*ethpb.SyncSubcommitteeIndexResponse, error) {
+func (c *beaconApiValidatorClient) GetSyncSubcommitteeIndex(ctx context.Context, in *ethpb.SyncSubcommitteeIndexRequest) (*ethpb.SyncSubcommitteeIndexResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.GetSyncSubcommitteeIndex(ctx, in)
+	}
 	// TODO: Implement me
 	panic("beaconApiValidatorClient.GetSyncSubcommitteeIndex is not implemented")
 }
 
-func (c *beaconApiValidatorClient) MultipleValidatorStatus(_ context.Context, in *ethpb.MultipleValidatorStatusRequest) (*ethpb.MultipleValidatorStatusResponse, error) {
+func (c *beaconApiValidatorClient) MultipleValidatorStatus(ctx context.Context, in *ethpb.MultipleValidatorStatusRequest) (*ethpb.MultipleValidatorStatusResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.MultipleValidatorStatus(ctx, in)
+	}
+
 	return c.getMultipleValidatorStatus(in.PublicKeys, in.Indices)
 }
 
-func (*beaconApiValidatorClient) PrepareBeaconProposer(_ context.Context, _ *ethpb.PrepareBeaconProposerRequest) (*empty.Empty, error) {
+func (c *beaconApiValidatorClient) PrepareBeaconProposer(ctx context.Context, in *ethpb.PrepareBeaconProposerRequest) (*empty.Empty, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.PrepareBeaconProposer(ctx, in)
+	}
 	// TODO: Implement me
 	panic("beaconApiValidatorClient.PrepareBeaconProposer is not implemented")
 }
 
-func (*beaconApiValidatorClient) ProposeAttestation(_ context.Context, _ *ethpb.Attestation) (*ethpb.AttestResponse, error) {
+func (c *beaconApiValidatorClient) ProposeAttestation(ctx context.Context, in *ethpb.Attestation) (*ethpb.AttestResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.ProposeAttestation(ctx, in)
+	}
 	// TODO: Implement me
 	panic("beaconApiValidatorClient.ProposeAttestation is not implemented")
 }
 
-func (c *beaconApiValidatorClient) ProposeBeaconBlock(_ context.Context, in *ethpb.GenericSignedBeaconBlock) (*ethpb.ProposeResponse, error) {
+func (c *beaconApiValidatorClient) ProposeBeaconBlock(ctx context.Context, in *ethpb.GenericSignedBeaconBlock) (*ethpb.ProposeResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.ProposeBeaconBlock(ctx, in)
+	}
+
 	var consensusVersion string
 	var beaconBlockRoot []byte
 
@@ -476,8 +517,130 @@ func (c *beaconApiValidatorClient) ProposeBeaconBlock(_ context.Context, in *eth
 	return &ethpb.ProposeResponse{BlockRoot: beaconBlockRoot}, nil
 }
 
+func (c *beaconApiValidatorClient) ProposeExit(ctx context.Context, in *ethpb.SignedVoluntaryExit) (*ethpb.ProposeExitResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.ProposeExit(ctx, in)
+	}
+	// TODO: Implement me
+	panic("beaconApiValidatorClient.ProposeExit is not implemented")
+}
+
+func (c *beaconApiValidatorClient) StreamBlocksAltair(ctx context.Context, in *ethpb.StreamBlocksRequest) (ethpb.BeaconNodeValidator_StreamBlocksAltairClient, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.StreamBlocksAltair(ctx, in)
+	}
+	// TODO: Implement me
+	panic("beaconApiValidatorClient.StreamBlocksAltair is not implemented")
+}
+
+func (c *beaconApiValidatorClient) StreamDuties(ctx context.Context, in *ethpb.DutiesRequest) (ethpb.BeaconNodeValidator_StreamDutiesClient, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.StreamDuties(ctx, in)
+	}
+	// TODO: Implement me
+	panic("beaconApiValidatorClient.StreamDuties is not implemented")
+}
+
+func (c *beaconApiValidatorClient) SubmitAggregateSelectionProof(ctx context.Context, in *ethpb.AggregateSelectionRequest) (*ethpb.AggregateSelectionResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.SubmitAggregateSelectionProof(ctx, in)
+	}
+	// TODO: Implement me
+	panic("beaconApiValidatorClient.SubmitAggregateSelectionProof is not implemented")
+}
+
+func (c *beaconApiValidatorClient) SubmitSignedAggregateSelectionProof(ctx context.Context, in *ethpb.SignedAggregateSubmitRequest) (*ethpb.SignedAggregateSubmitResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.SubmitSignedAggregateSelectionProof(ctx, in)
+	}
+	// TODO: Implement me
+	panic("beaconApiValidatorClient.SubmitSignedAggregateSelectionProof is not implemented")
+}
+
+func (c *beaconApiValidatorClient) SubmitSignedContributionAndProof(ctx context.Context, in *ethpb.SignedContributionAndProof) (*empty.Empty, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.SubmitSignedContributionAndProof(ctx, in)
+	}
+	// TODO: Implement me
+	panic("beaconApiValidatorClient.SubmitSignedContributionAndProof is not implemented")
+}
+
+func (c *beaconApiValidatorClient) SubmitSyncMessage(ctx context.Context, in *ethpb.SyncCommitteeMessage) (*empty.Empty, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.SubmitSyncMessage(ctx, in)
+	}
+	// TODO: Implement me
+	panic("beaconApiValidatorClient.SubmitSyncMessage is not implemented")
+}
+
+func (c *beaconApiValidatorClient) SubmitValidatorRegistrations(ctx context.Context, in *ethpb.SignedValidatorRegistrationsV1) (*empty.Empty, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.SubmitValidatorRegistrations(ctx, in)
+	}
+	// TODO: Implement me
+	panic("beaconApiValidatorClient.SubmitValidatorRegistrations is not implemented")
+}
+
+func (c *beaconApiValidatorClient) SubscribeCommitteeSubnets(ctx context.Context, in *ethpb.CommitteeSubnetsSubscribeRequest) (*empty.Empty, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.SubscribeCommitteeSubnets(ctx, in)
+	}
+	// TODO: Implement me
+	panic("beaconApiValidatorClient.SubscribeCommitteeSubnets is not implemented")
+}
+
+func (c *beaconApiValidatorClient) ValidatorIndex(ctx context.Context, in *ethpb.ValidatorIndexRequest) (*ethpb.ValidatorIndexResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.ValidatorIndex(ctx, in)
+	}
+	// TODO: Implement me
+	panic("beaconApiValidatorClient.ValidatorIndex is not implemented")
+}
+
+func (c *beaconApiValidatorClient) ValidatorStatus(ctx context.Context, in *ethpb.ValidatorStatusRequest) (*ethpb.ValidatorStatusResponse, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.ValidatorStatus(ctx, in)
+	}
+
+	return c.getValidatorStatus(in.PublicKey)
+}
+
+func (c *beaconApiValidatorClient) WaitForActivation(ctx context.Context, in *ethpb.ValidatorActivationRequest) (ethpb.BeaconNodeValidator_WaitForActivationClient, error) {
+	if builtWithGrpcFallback {
+		return c.beaconNodeValidatorClient.WaitForActivation(ctx, in)
+	}
+	// TODO: Implement me
+	panic("beaconApiValidatorClient.WaitForActivation is not implemented")
+}
+
+// Deprecated: Do not use.
+func (c *beaconApiValidatorClient) WaitForChainStart(ctx context.Context, in *empty.Empty) (*ethpb.ChainStartResponse, error) {
+	genesis, err := c.getGenesis()
+	if err != nil {
+		return nil, err
+	}
+
+	genesisTime, err := strconv.ParseUint(genesis.Data.GenesisTime, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	chainStartResponse := &ethpb.ChainStartResponse{}
+	chainStartResponse.Started = true
+	chainStartResponse.GenesisTime = genesisTime
+
+	// Remove the leading 0x from the string before decoding it to bytes
+	genesisValidatorRoot, err := hex.DecodeString(genesis.Data.GenesisValidatorsRoot[2:])
+	if err != nil {
+		return nil, err
+	}
+	chainStartResponse.GenesisValidatorsRoot = genesisValidatorRoot
+
+	return chainStartResponse, nil
+}
+
 func jsonifyBeaconBlockBody(beaconBlockBody *ethpb.BeaconBlockBody) *apimiddleware.BeaconBlockBodyJson {
-	var attestations []*apimiddleware.AttestationJson
+	attestations := []*apimiddleware.AttestationJson{}
 	for _, attestation := range beaconBlockBody.Attestations {
 		attestationJson := &apimiddleware.AttestationJson{
 			AggregationBits: "0x" + hex.EncodeToString(attestation.AggregationBits),
@@ -487,7 +650,7 @@ func jsonifyBeaconBlockBody(beaconBlockBody *ethpb.BeaconBlockBody) *apimiddlewa
 		attestations = append(attestations, attestationJson)
 	}
 
-	var attesterSlashings []*apimiddleware.AttesterSlashingJson
+	attesterSlashings := []*apimiddleware.AttesterSlashingJson{}
 	for _, attesterSlashing := range beaconBlockBody.AttesterSlashings {
 		attesterSlashingJson := &apimiddleware.AttesterSlashingJson{
 			Attestation_1: jsonifyIndexedAttestation(attesterSlashing.Attestation_1),
@@ -496,7 +659,7 @@ func jsonifyBeaconBlockBody(beaconBlockBody *ethpb.BeaconBlockBody) *apimiddlewa
 		attesterSlashings = append(attesterSlashings, attesterSlashingJson)
 	}
 
-	var deposits []*apimiddleware.DepositJson
+	deposits := []*apimiddleware.DepositJson{}
 	for _, deposit := range beaconBlockBody.Deposits {
 		var proofs []string
 		for _, proof := range deposit.Proof {
@@ -515,7 +678,7 @@ func jsonifyBeaconBlockBody(beaconBlockBody *ethpb.BeaconBlockBody) *apimiddlewa
 		deposits = append(deposits, depositJson)
 	}
 
-	var proposerSlashings []*apimiddleware.ProposerSlashingJson
+	proposerSlashings := []*apimiddleware.ProposerSlashingJson{}
 	for _, proposerSlashing := range beaconBlockBody.ProposerSlashings {
 		proposerSlashingJson := &apimiddleware.ProposerSlashingJson{
 			Header_1: jsonifySignedBeaconBlockHeader(proposerSlashing.Header_1),
@@ -524,7 +687,7 @@ func jsonifyBeaconBlockBody(beaconBlockBody *ethpb.BeaconBlockBody) *apimiddlewa
 		proposerSlashings = append(proposerSlashings, proposerSlashingJson)
 	}
 
-	var signedVoluntaryExits []*apimiddleware.SignedVoluntaryExitJson
+	signedVoluntaryExits := []*apimiddleware.SignedVoluntaryExitJson{}
 	for _, signedVoluntaryExit := range beaconBlockBody.VoluntaryExits {
 		signedVoluntaryExitJson := &apimiddleware.SignedVoluntaryExitJson{
 			Exit: &apimiddleware.VoluntaryExitJson{
@@ -545,7 +708,7 @@ func jsonifyBeaconBlockBody(beaconBlockBody *ethpb.BeaconBlockBody) *apimiddlewa
 			DepositCount: strconv.FormatUint(beaconBlockBody.Eth1Data.DepositCount, 10),
 			DepositRoot:  "0x" + hex.EncodeToString(beaconBlockBody.Eth1Data.DepositRoot),
 		},
-		Graffiti:          string(beaconBlockBody.Graffiti),
+		Graffiti:          "0x" + hex.EncodeToString(beaconBlockBody.Graffiti),
 		ProposerSlashings: proposerSlashings,
 		RandaoReveal:      "0x" + hex.EncodeToString(beaconBlockBody.RandaoReveal),
 		VoluntaryExits:    signedVoluntaryExits,
@@ -586,91 +749,6 @@ func jsonifySignedBeaconBlockHeader(signedBeaconBlockHeader *ethpb.SignedBeaconB
 	signedBeaconBlockHeaderJson.Header.StateRoot = "0x" + hex.EncodeToString(signedBeaconBlockHeader.Header.StateRoot)
 	signedBeaconBlockHeaderJson.Signature = "0x" + hex.EncodeToString(signedBeaconBlockHeader.Signature)
 	return signedBeaconBlockHeaderJson
-}
-
-func (*beaconApiValidatorClient) ProposeExit(_ context.Context, _ *ethpb.SignedVoluntaryExit) (*ethpb.ProposeExitResponse, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.ProposeExit is not implemented")
-}
-
-func (*beaconApiValidatorClient) StreamBlocksAltair(_ context.Context, _ *ethpb.StreamBlocksRequest) (ethpb.BeaconNodeValidator_StreamBlocksAltairClient, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.StreamBlocksAltair is not implemented")
-}
-
-func (*beaconApiValidatorClient) StreamDuties(_ context.Context, _ *ethpb.DutiesRequest) (ethpb.BeaconNodeValidator_StreamDutiesClient, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.StreamDuties is not implemented")
-}
-
-func (*beaconApiValidatorClient) SubmitAggregateSelectionProof(_ context.Context, _ *ethpb.AggregateSelectionRequest) (*ethpb.AggregateSelectionResponse, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.SubmitAggregateSelectionProof is not implemented")
-}
-
-func (*beaconApiValidatorClient) SubmitSignedAggregateSelectionProof(_ context.Context, _ *ethpb.SignedAggregateSubmitRequest) (*ethpb.SignedAggregateSubmitResponse, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.SubmitSignedAggregateSelectionProof is not implemented")
-}
-
-func (*beaconApiValidatorClient) SubmitSignedContributionAndProof(_ context.Context, _ *ethpb.SignedContributionAndProof) (*empty.Empty, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.SubmitSignedContributionAndProof is not implemented")
-}
-
-func (*beaconApiValidatorClient) SubmitSyncMessage(_ context.Context, _ *ethpb.SyncCommitteeMessage) (*empty.Empty, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.SubmitSyncMessage is not implemented")
-}
-
-func (*beaconApiValidatorClient) SubmitValidatorRegistrations(_ context.Context, _ *ethpb.SignedValidatorRegistrationsV1) (*empty.Empty, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.SubmitValidatorRegistrations is not implemented")
-}
-
-func (*beaconApiValidatorClient) SubscribeCommitteeSubnets(_ context.Context, _ *ethpb.CommitteeSubnetsSubscribeRequest) (*empty.Empty, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.SubscribeCommitteeSubnets is not implemented")
-}
-
-func (*beaconApiValidatorClient) ValidatorIndex(_ context.Context, _ *ethpb.ValidatorIndexRequest) (*ethpb.ValidatorIndexResponse, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.ValidatorIndex is not implemented")
-}
-
-func (c *beaconApiValidatorClient) ValidatorStatus(_ context.Context, in *ethpb.ValidatorStatusRequest) (*ethpb.ValidatorStatusResponse, error) {
-	return c.getValidatorStatus(in.PublicKey)
-}
-
-func (*beaconApiValidatorClient) WaitForActivation(_ context.Context, _ *ethpb.ValidatorActivationRequest) (ethpb.BeaconNodeValidator_WaitForActivationClient, error) {
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.WaitForActivation is not implemented")
-}
-
-// Deprecated: Do not use.
-func (c *beaconApiValidatorClient) WaitForChainStart(_ context.Context, _ *empty.Empty) (*ethpb.ChainStartResponse, error) {
-	genesis, err := c.getGenesis()
-	if err != nil {
-		return nil, err
-	}
-
-	genesisTime, err := strconv.ParseUint(genesis.Data.GenesisTime, 10, 64)
-	if err != nil {
-		return nil, err
-	}
-
-	chainStartResponse := &ethpb.ChainStartResponse{}
-	chainStartResponse.Started = true
-	chainStartResponse.GenesisTime = genesisTime
-
-	// Remove the leading 0x from the string before decoding it to bytes
-	genesisValidatorRoot, err := hex.DecodeString(genesis.Data.GenesisValidatorsRoot[2:])
-	if err != nil {
-		return nil, err
-	}
-	chainStartResponse.GenesisValidatorsRoot = genesisValidatorRoot
-
-	return chainStartResponse, nil
 }
 
 func (c *beaconApiValidatorClient) getGenesis() (*apimiddleware.GenesisResponseJson, error) {
@@ -821,8 +899,13 @@ func (c *beaconApiValidatorClient) getMultipleValidatorStatus(pubkeys [][]byte, 
 			return nil, err
 		}
 
+		pubkey, err := hex.DecodeString(responseData.Validator.PublicKey[2:])
+		if err != nil {
+			return nil, err
+		}
+
 		response.Indices = append(response.Indices, types.ValidatorIndex(validatorIndex))
-		response.PublicKeys = append(response.PublicKeys, []byte(responseData.Validator.PublicKey))
+		response.PublicKeys = append(response.PublicKeys, pubkey)
 
 		statusResponse, err := parseValidatorStatusResponse(responseData, activationQueue)
 		if err != nil {
@@ -1020,6 +1103,42 @@ func (c *beaconApiValidatorClient) getDuties(epoch uint64, pubkeys [][]byte) ([]
 		return nil, err
 	}
 
+	// Get the state committees
+	stateCommittees, err := c.getStateCommittees(epoch)
+	if err != nil {
+		return nil, err
+	}
+
+	// Map the committee indices to the validator indices
+	stateCommitteeToValidatorsMap := make(map[uint64]map[uint64][]types.ValidatorIndex)
+	for _, stateCommittee := range stateCommittees.Data {
+		stateCommitteeIndex, err := strconv.ParseUint(stateCommittee.Index, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		slot, err := strconv.ParseUint(stateCommittee.Slot, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		var validatorIndices []types.ValidatorIndex
+		for _, validator := range stateCommittee.Validators {
+			validatorIndex, err := strconv.ParseUint(validator, 10, 64)
+			if err != nil {
+				return nil, err
+			}
+
+			validatorIndices = append(validatorIndices, types.ValidatorIndex(validatorIndex))
+		}
+
+		if _, ok := stateCommitteeToValidatorsMap[stateCommitteeIndex]; !ok {
+			stateCommitteeToValidatorsMap[stateCommitteeIndex] = make(map[uint64][]types.ValidatorIndex)
+		}
+
+		stateCommitteeToValidatorsMap[stateCommitteeIndex][slot] = validatorIndices
+	}
+
 	for _, attesterDutyData := range attesterDutiesJson.Data {
 		validatorIndex, err := strconv.ParseUint(attesterDutyData.ValidatorIndex, 10, 64)
 		if err != nil {
@@ -1032,9 +1151,32 @@ func (c *beaconApiValidatorClient) getDuties(epoch uint64, pubkeys [][]byte) ([]
 		}
 
 		if dutyResponse, exists := indicesMapping[validatorIndex]; exists {
-			dutyResponse.PublicKey = []byte(attesterDutyData.Pubkey)
-			dutyResponse.ValidatorIndex = types.ValidatorIndex(validatorIndex)
+			committeeIndex, err := strconv.ParseUint(attesterDutyData.CommitteeIndex, 10, 64)
+			if err != nil {
+				return nil, err
+			}
+
+			slotCommittees, exists := stateCommitteeToValidatorsMap[committeeIndex]
+			if !exists {
+				return nil, errors.Errorf("committee index %d not found", committeeIndex)
+			}
+
+			committee, exists := slotCommittees[attesterSlot]
+			if !exists {
+				return nil, errors.Errorf("slot index %d not found in committee index %d", attesterSlot, committeeIndex)
+			}
+
+			pubkey, err := hex.DecodeString(attesterDutyData.Pubkey[2:])
+			if err != nil {
+				return nil, err
+			}
+
 			dutyResponse.AttesterSlot = types.Slot(attesterSlot)
+			dutyResponse.Committee = committee
+			dutyResponse.CommitteeIndex = types.CommitteeIndex(committeeIndex)
+			dutyResponse.IsSyncCommittee = false
+			dutyResponse.PublicKey = pubkey
+			dutyResponse.ValidatorIndex = types.ValidatorIndex(validatorIndex)
 		}
 	}
 
@@ -1060,11 +1202,7 @@ func (c *beaconApiValidatorClient) getDuties(epoch uint64, pubkeys [][]byte) ([]
 		}
 	}
 
-	// Get the sync duties
-	forkVersion, err := c.getForkVersion()
-	if err != nil {
-		return nil, err
-	}
+	forkVersion := c.getForkVersion(types.Epoch(epoch))
 
 	// Phase0 doesn't have sync committees
 	if forkVersion != "phase0" {
@@ -1080,7 +1218,12 @@ func (c *beaconApiValidatorClient) getDuties(epoch uint64, pubkeys [][]byte) ([]
 			}
 
 			if dutyResponse, exists := indicesMapping[validatorIndex]; exists {
-				dutyResponse.PublicKey = []byte(dutyData.Pubkey)
+				pubkey, err := hex.DecodeString(dutyData.Pubkey[2:])
+				if err != nil {
+					return nil, err
+				}
+
+				dutyResponse.PublicKey = pubkey
 				dutyResponse.IsSyncCommittee = true
 
 				for indexInCommittee, committeeValidatorIndex := range dutyData.ValidatorSyncCommitteeIndices {
@@ -1118,11 +1261,11 @@ func (c *beaconApiValidatorClient) getDuties(epoch uint64, pubkeys [][]byte) ([]
 	return duties, nil
 }
 
-func (c *beaconApiValidatorClient) getForkVersion() (string, error) {
-	// Query the last block to get the fork version
-	resp, err := c.httpClient.Get(c.url + "/eth/v2/beacon/blocks/head")
+func (c *beaconApiValidatorClient) getStateCommittees(epoch uint64) (*apimiddleware.StateCommitteesResponseJson, error) {
+	query := fmt.Sprintf("%s/eth/v1/beacon/states/head/committees?epoch=%d", c.url, epoch)
+	resp, err := c.httpClient.Get(query)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer func() {
 		if err = resp.Body.Close(); err != nil {
@@ -1134,19 +1277,29 @@ func (c *beaconApiValidatorClient) getForkVersion() (string, error) {
 		errorJson := apimiddleware.EventErrorJson{}
 		err = json.NewDecoder(resp.Body).Decode(&errorJson)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
-		return "", errors.Errorf("error %d: %s", errorJson.StatusCode, errorJson.Message)
+		return nil, errors.Errorf("error %d: %s", errorJson.StatusCode, errorJson.Message)
 	}
 
-	blockV2ResponseJson := apimiddleware.BlockV2ResponseJson{}
-	err = json.NewDecoder(resp.Body).Decode(&blockV2ResponseJson)
+	dutiesJson := &apimiddleware.StateCommitteesResponseJson{}
+	err = json.NewDecoder(resp.Body).Decode(&dutiesJson)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return blockV2ResponseJson.Version, nil
+	return dutiesJson, nil
+}
+
+func (c *beaconApiValidatorClient) getForkVersion(epoch types.Epoch) string {
+	if epoch < params.BeaconConfig().AltairForkEpoch {
+		return "phase0"
+	} else if epoch < params.BeaconConfig().BellatrixForkEpoch {
+		return "altair"
+	} else {
+		return "bellatrix"
+	}
 }
 
 func parseValidatorStatusResponse(responseData *apimiddleware.ValidatorContainerJson, activationQueue *apimiddleware.StateValidatorsResponseJson) (*ethpb.ValidatorStatusResponse, error) {

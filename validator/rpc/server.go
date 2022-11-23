@@ -91,7 +91,6 @@ type Server struct {
 	validatorMonitoringPort   int
 	validatorGatewayHost      string
 	validatorGatewayPort      int
-	beaconApiEndpoint         string
 	beaconApiTimeout          time.Duration
 }
 
