@@ -376,7 +376,6 @@ func (c *ValidatorClient) registerPrometheusService(cliCtx *cli.Context) error {
 func (c *ValidatorClient) registerValidatorService(cliCtx *cli.Context) error {
 
 	endpoint := c.cliCtx.String(flags.BeaconRPCProviderFlag.Name)
-	beaconApiEndpoint := c.cliCtx.String(flags.BeaconRESTApiProviderFlag.Name)
 	dataDir := c.cliCtx.String(cmd.DataDirFlag.Name)
 	logValidatorBalances := !c.cliCtx.Bool(flags.DisablePenaltyRewardLogFlag.Name)
 	emitAccountMetrics := !c.cliCtx.Bool(flags.DisableAccountMetricsFlag.Name)
@@ -433,7 +432,7 @@ func (c *ValidatorClient) registerValidatorService(cliCtx *cli.Context) error {
 		Web3SignerConfig:           wsc,
 		ProposerSettings:           bpc,
 		BeaconApiTimeout:           time.Second * 30,
-		BeaconApiEndpoint:          beaconApiEndpoint,
+		BeaconApiEndpoint:          c.cliCtx.String(flags.BeaconRESTApiProviderFlag.Name),
 	})
 	if err != nil {
 		return errors.Wrap(err, "could not initialize validator service")

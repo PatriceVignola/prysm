@@ -35,7 +35,7 @@ var BellatrixForkTransition = types.Evaluator{
 }
 
 // TODO: pass validatorHelpers.NodeConnection as a parameter once the Beacon API usage becomes more stable
-func altairForkOccurs(conns ...*grpc.ClientConn) error {
+func altairForkOccurs(_ types.EvaluationContext, conns ...*grpc.ClientConn) error {
 	conn := conns[0]
 	validatorConn := validatorHelpers.NewNodeConnection(conn, fmt.Sprintf("http://127.0.0.1:%d", e2e.TestParams.Ports.PrysmBeaconNodeGatewayPort), 30*time.Second)
 	client := validatorClientFactory.NewValidatorClient(validatorConn)
@@ -79,7 +79,7 @@ func altairForkOccurs(conns ...*grpc.ClientConn) error {
 }
 
 // TODO: pass validatorHelpers.NodeConnection as a parameter once the Beacon API usage becomes more stable
-func bellatrixForkOccurs(conns ...*grpc.ClientConn) error {
+func bellatrixForkOccurs(_ types.EvaluationContext, conns ...*grpc.ClientConn) error {
 	conn := conns[0]
 	validatorConn := validatorHelpers.NewNodeConnection(conn, fmt.Sprintf("http://127.0.0.1:%d", e2e.TestParams.Ports.PrysmBeaconNodeGatewayPort), 30*time.Second)
 	client := validatorClientFactory.NewValidatorClient(validatorConn)

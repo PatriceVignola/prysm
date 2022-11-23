@@ -53,7 +53,7 @@ func (s *Server) registerBeaconClient() error {
 
 	conn := validatorHelpers.NewNodeConnection(
 		grpcConn,
-		s.nodeGatewayEndpoint,
+		s.beaconApiEndpoint,
 		s.beaconApiTimeout,
 	)
 

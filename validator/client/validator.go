@@ -238,7 +238,6 @@ func (v *validator) WaitForChainStart(ctx context.Context) error {
 	// First, check if the beacon chain has started.
 	log.Info("Syncing with beacon node to align on chain genesis info")
 	chainStartRes, err := v.validatorClient.WaitForChainStart(ctx, &emptypb.Empty{})
-
 	if err != io.EOF {
 		if ctx.Err() == context.Canceled {
 			return errors.Wrap(ctx.Err(), "context has been canceled so shutting down the loop")
