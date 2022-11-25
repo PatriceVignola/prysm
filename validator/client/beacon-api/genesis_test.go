@@ -25,9 +25,8 @@ func TestGetGenesis_ValidGenesis(t *testing.T) {
 	resp, err := validatorClient.getGenesis()
 	assert.NoError(t, err)
 	require.NotNil(t, resp)
-	require.NotNil(t, resp.Data)
-	assert.Equal(t, "1234", resp.Data.GenesisTime)
-	assert.Equal(t, "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2", resp.Data.GenesisValidatorsRoot)
+	assert.Equal(t, "1234", resp.GenesisTime)
+	assert.Equal(t, "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2", resp.GenesisValidatorsRoot)
 }
 
 func TestGetGenesis_NilData(t *testing.T) {
@@ -36,7 +35,7 @@ func TestGetGenesis_NilData(t *testing.T) {
 
 	validatorClient := &beaconApiValidatorClient{url: server.URL, httpClient: http.Client{Timeout: time.Second * 5}}
 	_, err := validatorClient.getGenesis()
-	assert.ErrorContains(t, "GenesisResponseJson.Data is nil", err)
+	assert.ErrorContains(t, "genesis data is nil", err)
 }
 
 func TestGetGenesis_InvalidJsonGenesis(t *testing.T) {

@@ -6,48 +6,46 @@ package beacon_api
 import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
+	types "github.com/prysmaticlabs/prysm/v3/consensus-types/primitives"
 	ethpb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
 )
 
-func (c beaconApiValidatorClient) getDomainData(domainType []byte) (*ethpb.DomainResponse, error) {
-	// 1. Get genesis_fork_version and genesis_validators_root from the Genesis call
+func (c beaconApiValidatorClient) getDomainData(epoch types.Epoch, domainType []byte) (*ethpb.DomainResponse, error) {
+	if len(domainType) != 4 {
+		return nil, errors.Errorf("invalid domain type: %s", string(domainType))
+	}
+
+	// Get the fork version from the given epoch
+	forkVersion, err := c.getForkVersion(epoch)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get fork version for epoch %d", epoch)
+	}
+
+	// Get the genesis validator root
 	genesis, err := c.getGenesis()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get genesis info")
 	}
 
-	if !validForkVersion(genesis.Data.GenesisForkVersion) {
-		return nil, errors.Errorf("invalid genesis fork version: %s", genesis.Data.GenesisForkVersion)
+	if !validRoot(genesis.GenesisValidatorsRoot) {
+		return nil, errors.Errorf("invalid genesis validators root: %s", genesis.GenesisValidatorsRoot)
 	}
 
-	forkVersion, err := hexutil.Decode(genesis.Data.GenesisForkVersion)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to decode genesis fork version")
-	}
-
-	if !validRoot(genesis.Data.GenesisValidatorsRoot) {
-		return nil, errors.Errorf("invalid genesis validators root: %s", genesis.Data.GenesisValidatorsRoot)
-	}
-
-	genesisValidatorRoot, err := hexutil.Decode(genesis.Data.GenesisValidatorsRoot)
+	genesisValidatorRoot, err := hexutil.Decode(genesis.GenesisValidatorsRoot)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to decode genesis validators root")
 	}
 
-	// 2. Compute hash_tree_root of genesis_fork_version and genesis_validators_root
+	// Compute the hash tree root of the fork version and the genesis validator root
 	forkDataRoot, err := (&ethpb.ForkData{
-		CurrentVersion:        forkVersion,
+		CurrentVersion:        forkVersion[:],
 		GenesisValidatorsRoot: genesisValidatorRoot,
 	}).HashTreeRoot()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to hash the fork data")
 	}
 
-	// 3. Append the last 28 bytes of the fork data root to the domain type
-	if len(domainType) != 4 {
-		return nil, errors.Errorf("invalid domain type: %s", string(domainType))
-	}
-
+	// Append the last 28 bytes of the fork data root to the domain type
 	signatureDomain := make([]byte, 0, 32)
 	signatureDomain = append(signatureDomain, domainType...)
 	signatureDomain = append(signatureDomain, forkDataRoot[:28]...)

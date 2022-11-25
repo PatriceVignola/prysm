@@ -78,7 +78,7 @@ func (c *beaconApiValidatorClient) CheckDoppelGanger(ctx context.Context, in *et
 }
 
 func (c *beaconApiValidatorClient) DomainData(ctx context.Context, in *ethpb.DomainRequest) (*ethpb.DomainResponse, error) {
-	return c.getDomainData(in.Domain)
+	return c.getDomainData(in.Epoch, in.Domain)
 }
 
 func (c *beaconApiValidatorClient) GetAttestationData(ctx context.Context, in *ethpb.AttestationDataRequest) (*ethpb.AttestationData, error) {
@@ -1151,7 +1151,7 @@ func (c *beaconApiValidatorClient) getDuties(epoch uint64, pubkeys [][]byte) ([]
 		}
 	}
 
-	forkVersion := c.getForkVersion(types.Epoch(epoch))
+	forkVersion := c.getForkVersionString(types.Epoch(epoch))
 
 	// Phase0 doesn't have sync committees
 	if forkVersion != "phase0" {
@@ -1241,7 +1241,7 @@ func (c *beaconApiValidatorClient) getStateCommittees(epoch uint64) (*apimiddlew
 	return dutiesJson, nil
 }
 
-func (c *beaconApiValidatorClient) getForkVersion(epoch types.Epoch) string {
+func (c *beaconApiValidatorClient) getForkVersionString(epoch types.Epoch) string {
 	if epoch < params.BeaconConfig().AltairForkEpoch {
 		return "phase0"
 	} else if epoch < params.BeaconConfig().BellatrixForkEpoch {
