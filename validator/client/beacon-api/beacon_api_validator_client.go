@@ -78,37 +78,7 @@ func (c *beaconApiValidatorClient) CheckDoppelGanger(ctx context.Context, in *et
 }
 
 func (c *beaconApiValidatorClient) DomainData(ctx context.Context, in *ethpb.DomainRequest) (*ethpb.DomainResponse, error) {
-	// 1. Get genesis_fork_version and genesis_validators_root from the Genesis call
-	genesis, err := c.getGenesis()
-	if err != nil {
-		return nil, err
-	}
-
-	forkVersion, err := hex.DecodeString(genesis.Data.GenesisForkVersion[2:])
-	if err != nil {
-		return nil, err
-	}
-
-	genesisValidatorRoot, err := hex.DecodeString(genesis.Data.GenesisValidatorsRoot[2:])
-	if err != nil {
-		return nil, err
-	}
-
-	// 2. Compute hash_tree_root of genesis_fork_version and genesis_validators_root
-	forkDataRoot, err := (&ethpb.ForkData{
-		CurrentVersion:        forkVersion,
-		GenesisValidatorsRoot: genesisValidatorRoot,
-	}).HashTreeRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	// 3. Append the first 4 bytes of the domain type to the last 28 bytes of the fork data root
-	var signatureDomain []byte
-	signatureDomain = append(signatureDomain, in.Domain[:4]...)
-	signatureDomain = append(signatureDomain, forkDataRoot[:28]...)
-
-	return &ethpb.DomainResponse{SignatureDomain: signatureDomain}, nil
+	return c.getDomainData(in.Domain)
 }
 
 func (c *beaconApiValidatorClient) GetAttestationData(ctx context.Context, in *ethpb.AttestationDataRequest) (*ethpb.AttestationData, error) {
