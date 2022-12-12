@@ -14,6 +14,7 @@ go_library(
         "json_rest_handler.go",
         "propose_beacon_block.go",
         "state_validators.go",
+        "validator_status.go",
     ],
     importpath = "github.com/prysmaticlabs/prysm/v3/validator/client/beacon-api",
     visibility = ["//validator:__subpackages__"],
