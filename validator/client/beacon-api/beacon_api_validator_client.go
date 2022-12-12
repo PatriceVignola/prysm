@@ -121,8 +121,7 @@ func (c *beaconApiValidatorClient) MultipleValidatorStatus(ctx context.Context, 
 		return c.fallbackClient.MultipleValidatorStatus(ctx, in)
 	}
 
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.MultipleValidatorStatus is not implemented. To use a fallback client, create this validator with NewBeaconApiValidatorClientWithFallback instead.")
+	return c.getMultipleValidatorStatus(in.PublicKeys, in.Indices)
 }
 
 func (c *beaconApiValidatorClient) PrepareBeaconProposer(ctx context.Context, in *ethpb.PrepareBeaconProposerRequest) (*empty.Empty, error) {
