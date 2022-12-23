@@ -11,7 +11,10 @@ import (
 	"github.com/prysmaticlabs/prysm/v3/encoding/bytesutil"
 	ethpb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
 	iface "github.com/prysmaticlabs/prysm/v3/validator/client/iface"
+	"github.com/sirupsen/logrus"
 )
+
+var log = logrus.WithField("prefix", "powchain")
 
 type beaconApiValidatorClient struct {
 	genesisProvider genesisProvider
@@ -103,12 +106,21 @@ func (c *beaconApiValidatorClient) GetSyncMessageBlockRoot(ctx context.Context, 
 }
 
 func (c *beaconApiValidatorClient) GetSyncSubcommitteeIndex(ctx context.Context, in *ethpb.SyncSubcommitteeIndexRequest) (*ethpb.SyncSubcommitteeIndexResponse, error) {
-	if c.fallbackClient != nil {
-		return c.fallbackClient.GetSyncSubcommitteeIndex(ctx, in)
+	grpcIndices, err := c.fallbackClient.GetSyncSubcommitteeIndex(ctx, in)
+	if err != nil {
+		return nil, err
 	}
 
-	// TODO: Implement me
-	panic("beaconApiValidatorClient.GetSyncSubcommitteeIndex is not implemented. To use a fallback client, create this validator with NewBeaconApiValidatorClientWithFallback instead.")
+	log.Errorf("*******************GRPC INDICES: %v", grpcIndices)
+
+	restIndices, err := c.getSyncSubcommitteeIndex(in)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Errorf("*******************REST INDICES: %v", restIndices)
+
+	return restIndices, nil
 }
 
 func (c *beaconApiValidatorClient) MultipleValidatorStatus(ctx context.Context, in *ethpb.MultipleValidatorStatusRequest) (*ethpb.MultipleValidatorStatusResponse, error) {
