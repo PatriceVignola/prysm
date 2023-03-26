@@ -39,6 +39,7 @@ go_library(
     visibility = ["//validator:__subpackages__"],
     deps = [
         "//api/gateway/apimiddleware:go_default_library",
+        "//beacon-chain/core/altair:go_default_library",
         "//beacon-chain/core/helpers:go_default_library",
         "//beacon-chain/core/signing:go_default_library",
         "//beacon-chain/rpc/apimiddleware:go_default_library",
