@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/prysm/v4/beacon-chain/core/altair"
 	"github.com/prysmaticlabs/prysm/v4/beacon-chain/rpc/apimiddleware"
 	"github.com/prysmaticlabs/prysm/v4/config/params"
+	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v4/validator/client/iface"
 )
@@ -22,6 +24,93 @@ type beaconApiBeaconChainClient struct {
 	fallbackClient          iface.BeaconChainClient
 	jsonRestHandler         jsonRestHandler
 	stateValidatorsProvider stateValidatorsProvider
+}
+
+// TODO (pavignol): Remove those structs once a better solution has been found for PreviousEpochParticipation and CurrentEpochParticipation
+type beaconStateAltairJson struct {
+	GenesisTime                 string                               `json:"genesis_time"`
+	GenesisValidatorsRoot       string                               `json:"genesis_validators_root" hex:"true"`
+	Slot                        string                               `json:"slot"`
+	Fork                        *apimiddleware.ForkJson              `json:"fork"`
+	LatestBlockHeader           *apimiddleware.BeaconBlockHeaderJson `json:"latest_block_header"`
+	BlockRoots                  []string                             `json:"block_roots" hex:"true"`
+	StateRoots                  []string                             `json:"state_roots" hex:"true"`
+	HistoricalRoots             []string                             `json:"historical_roots" hex:"true"`
+	Eth1Data                    *apimiddleware.Eth1DataJson          `json:"eth1_data"`
+	Eth1DataVotes               []*apimiddleware.Eth1DataJson        `json:"eth1_data_votes"`
+	Eth1DepositIndex            string                               `json:"eth1_deposit_index"`
+	Validators                  []*apimiddleware.ValidatorJson       `json:"validators"`
+	Balances                    []string                             `json:"balances"`
+	RandaoMixes                 []string                             `json:"randao_mixes" hex:"true"`
+	Slashings                   []string                             `json:"slashings"`
+	PreviousEpochParticipation  []string                             `json:"previous_epoch_participation"`
+	CurrentEpochParticipation   []string                             `json:"current_epoch_participation"`
+	JustificationBits           string                               `json:"justification_bits" hex:"true"`
+	PreviousJustifiedCheckpoint *apimiddleware.CheckpointJson        `json:"previous_justified_checkpoint"`
+	CurrentJustifiedCheckpoint  *apimiddleware.CheckpointJson        `json:"current_justified_checkpoint"`
+	FinalizedCheckpoint         *apimiddleware.CheckpointJson        `json:"finalized_checkpoint"`
+	InactivityScores            []string                             `json:"inactivity_scores"`
+	CurrentSyncCommittee        *apimiddleware.SyncCommitteeJson     `json:"current_sync_committee"`
+	NextSyncCommittee           *apimiddleware.SyncCommitteeJson     `json:"next_sync_committee"`
+}
+
+type beaconStateBellatrixJson struct {
+	GenesisTime                  string                                    `json:"genesis_time"`
+	GenesisValidatorsRoot        string                                    `json:"genesis_validators_root" hex:"true"`
+	Slot                         string                                    `json:"slot"`
+	Fork                         *apimiddleware.ForkJson                   `json:"fork"`
+	LatestBlockHeader            *apimiddleware.BeaconBlockHeaderJson      `json:"latest_block_header"`
+	BlockRoots                   []string                                  `json:"block_roots" hex:"true"`
+	StateRoots                   []string                                  `json:"state_roots" hex:"true"`
+	HistoricalRoots              []string                                  `json:"historical_roots" hex:"true"`
+	Eth1Data                     *apimiddleware.Eth1DataJson               `json:"eth1_data"`
+	Eth1DataVotes                []*apimiddleware.Eth1DataJson             `json:"eth1_data_votes"`
+	Eth1DepositIndex             string                                    `json:"eth1_deposit_index"`
+	Validators                   []*apimiddleware.ValidatorJson            `json:"validators"`
+	Balances                     []string                                  `json:"balances"`
+	RandaoMixes                  []string                                  `json:"randao_mixes" hex:"true"`
+	Slashings                    []string                                  `json:"slashings"`
+	PreviousEpochParticipation   []string                                  `json:"previous_epoch_participation"`
+	CurrentEpochParticipation    []string                                  `json:"current_epoch_participation"`
+	JustificationBits            string                                    `json:"justification_bits" hex:"true"`
+	PreviousJustifiedCheckpoint  *apimiddleware.CheckpointJson             `json:"previous_justified_checkpoint"`
+	CurrentJustifiedCheckpoint   *apimiddleware.CheckpointJson             `json:"current_justified_checkpoint"`
+	FinalizedCheckpoint          *apimiddleware.CheckpointJson             `json:"finalized_checkpoint"`
+	InactivityScores             []string                                  `json:"inactivity_scores"`
+	CurrentSyncCommittee         *apimiddleware.SyncCommitteeJson          `json:"current_sync_committee"`
+	NextSyncCommittee            *apimiddleware.SyncCommitteeJson          `json:"next_sync_committee"`
+	LatestExecutionPayloadHeader *apimiddleware.ExecutionPayloadHeaderJson `json:"latest_execution_payload_header"`
+}
+
+type beaconStateCapellaJson struct {
+	GenesisTime                  string                                           `json:"genesis_time"`
+	GenesisValidatorsRoot        string                                           `json:"genesis_validators_root" hex:"true"`
+	Slot                         string                                           `json:"slot"`
+	Fork                         *apimiddleware.ForkJson                          `json:"fork"`
+	LatestBlockHeader            *apimiddleware.BeaconBlockHeaderJson             `json:"latest_block_header"`
+	BlockRoots                   []string                                         `json:"block_roots" hex:"true"`
+	StateRoots                   []string                                         `json:"state_roots" hex:"true"`
+	HistoricalRoots              []string                                         `json:"historical_roots" hex:"true"`
+	Eth1Data                     *apimiddleware.Eth1DataJson                      `json:"eth1_data"`
+	Eth1DataVotes                []*apimiddleware.Eth1DataJson                    `json:"eth1_data_votes"`
+	Eth1DepositIndex             string                                           `json:"eth1_deposit_index"`
+	Validators                   []*apimiddleware.ValidatorJson                   `json:"validators"`
+	Balances                     []string                                         `json:"balances"`
+	RandaoMixes                  []string                                         `json:"randao_mixes" hex:"true"`
+	Slashings                    []string                                         `json:"slashings"`
+	PreviousEpochParticipation   []string                                         `json:"previous_epoch_participation"`
+	CurrentEpochParticipation    []string                                         `json:"current_epoch_participation"`
+	JustificationBits            string                                           `json:"justification_bits" hex:"true"`
+	PreviousJustifiedCheckpoint  *apimiddleware.CheckpointJson                    `json:"previous_justified_checkpoint"`
+	CurrentJustifiedCheckpoint   *apimiddleware.CheckpointJson                    `json:"current_justified_checkpoint"`
+	FinalizedCheckpoint          *apimiddleware.CheckpointJson                    `json:"finalized_checkpoint"`
+	InactivityScores             []string                                         `json:"inactivity_scores"`
+	CurrentSyncCommittee         *apimiddleware.SyncCommitteeJson                 `json:"current_sync_committee"`
+	NextSyncCommittee            *apimiddleware.SyncCommitteeJson                 `json:"next_sync_committee"`
+	LatestExecutionPayloadHeader *apimiddleware.ExecutionPayloadHeaderCapellaJson `json:"latest_execution_payload_header"`
+	NextWithdrawalIndex          string                                           `json:"next_withdrawal_index"`
+	NextWithdrawalValidatorIndex string                                           `json:"next_withdrawal_validator_index"`
+	HistoricalSummaries          []*apimiddleware.HistoricalSummaryJson           `json:"historical_summaries"`
 }
 
 func (c beaconApiBeaconChainClient) GetChainHead(ctx context.Context, in *empty.Empty) (*ethpb.ChainHead, error) {
@@ -61,6 +150,10 @@ func (c beaconApiBeaconChainClient) GetValidatorQueue(ctx context.Context, in *e
 }
 
 func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context, in *ethpb.ValidatorPerformanceRequest) (*ethpb.ValidatorPerformanceResponse, error) {
+	if in.PublicKeys == nil {
+		return nil, errors.New("no public keys found")
+	}
+
 	const beaconStateEndpoint = "/eth/v2/debug/beacon/states/head"
 
 	type abstractBeaconStateJson struct {
@@ -80,14 +173,14 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 	decoder := json.NewDecoder(bytes.NewReader(beaconStateJson.Data))
 	decoder.DisallowUnknownFields()
 
-	indices := make([]int64, len(in.Indices))
-	for index, validatorIndex := range in.Indices {
-		indices[index] = int64(validatorIndex)
+	pubkeys := make([]string, len(in.PublicKeys))
+	for idx, pubkeyBytes := range in.PublicKeys {
+		pubkeys[idx] = hexutil.Encode(pubkeyBytes)
 	}
 
-	stateValidatorsResponse, err := c.stateValidatorsProvider.GetStateValidators(ctx, nil, indices, nil)
+	stateValidatorsResponse, err := c.stateValidatorsProvider.GetStateValidators(ctx, pubkeys, nil, nil)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get head state validators for indices `%v`", indices)
+		return nil, errors.Wrapf(err, "failed to get head state validators for indices `%v`", in.PublicKeys)
 	}
 
 	cfg := params.BeaconConfig()
@@ -97,8 +190,11 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 
 	var activeValidatorBalanceSum uint64
 	var activeValidatorCount uint64
-	currentEffectiveBalances := make([]uint64, len(indices))
-	for index, stateValidator := range stateValidatorsResponse.Data {
+	currentEffectiveBalances := make([]uint64, len(pubkeys))
+
+	validatorPubkeyToIndex := make(map[string]primitives.ValidatorIndex, len(pubkeys))
+
+	for idx, stateValidator := range stateValidatorsResponse.Data {
 		if stateValidator == nil || stateValidator.Validator == nil {
 			return nil, errors.New("state validator is nil")
 		}
@@ -108,7 +204,7 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 			return nil, errors.Wrapf(err, "failed to parse validator effective balance `%s`", stateValidator.Validator.EffectiveBalance)
 		}
 
-		currentEffectiveBalances[index] = currentEffectiveBalance
+		currentEffectiveBalances[idx] = currentEffectiveBalance
 
 		balance, err := strconv.ParseUint(stateValidator.Balance, 10, 64)
 		if err != nil {
@@ -119,12 +215,59 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 			activeValidatorBalanceSum += balance
 			activeValidatorCount++
 		}
+
+		validatorIndex, err := strconv.ParseUint(stateValidator.Index, 10, 64)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to parse state validator index `%s`", stateValidator.Index)
+		}
+
+		validatorPubkeyToIndex[stateValidator.Validator.PublicKey] = primitives.ValidatorIndex(validatorIndex)
 	}
 
-	correctlyVotedSource := make([]bool, len(indices))
-	correctlyVotedTarget := make([]bool, len(indices))
-	correctlyVotedHead := make([]bool, len(indices))
-	balancesBeforeEpochTransition := make([]uint64, len(indices))
+	correctlyVotedSource := make([]bool, len(pubkeys))
+	correctlyVotedTarget := make([]bool, len(pubkeys))
+	correctlyVotedHead := make([]bool, len(pubkeys))
+	balancesBeforeEpochTransition := make([]uint64, len(pubkeys))
+
+	// Spec code:
+	// def translate_participation(state: BeaconState, pending_attestations: Sequence[phase0.PendingAttestation]) -> None:
+	//
+	//	for attestation in pending_attestations:
+	//	    data = attestation.data
+	//	    inclusion_delay = attestation.inclusion_delay
+	//	    # Translate attestation inclusion info to flag indices
+	//	    participation_flag_indices = get_attestation_participation_flag_indices(state, data, inclusion_delay)
+	//
+	//	    # Apply flags to all attesting validators
+	//	    epoch_participation = state.previous_epoch_participation
+	//	    for index in get_attesting_indices(state, data, attestation.aggregation_bits):
+	//	        for flag_index in participation_flag_indices:
+	//	            epoch_participation[index] = add_flag(epoch_participation[index], flag_index)
+
+	// def get_attestation_participation_flag_indices(state: BeaconState, data: AttestationData, inclusion_delay: uint64) -> Sequence[int]:
+	//     """
+	//     Return the flag indices that are satisfied by an attestation.
+	//     """
+	//     if data.target.epoch == get_current_epoch(state):
+	//     justified_checkpoint = state.current_justified_checkpoint
+	//     else:
+	//     justified_checkpoint = state.previous_justified_checkpoint
+	//
+	//     # Matching roots
+	//     is_matching_source = data.source == justified_checkpoint
+	//     is_matching_target = is_matching_source and data.target.root == get_block_root(state, data.target.epoch)
+	//     is_matching_head = is_matching_target and data.beacon_block_root == get_block_root_at_slot(state, data.slot)
+	//     assert is_matching_source
+	//
+	//     participation_flag_indices = []
+	//     if is_matching_source and inclusion_delay <= integer_squareroot(SLOTS_PER_EPOCH):
+	//     participation_flag_indices.append(TIMELY_SOURCE_FLAG_INDEX)
+	//     if is_matching_target and inclusion_delay <= SLOTS_PER_EPOCH:
+	//     participation_flag_indices.append(TIMELY_TARGET_FLAG_INDEX)
+	//     if is_matching_head and inclusion_delay == MIN_ATTESTATION_INCLUSION_DELAY:
+	//     participation_flag_indices.append(TIMELY_HEAD_FLAG_INDEX)
+	//
+	//     return participation_flag_indices
 
 	switch beaconStateJson.Version {
 	case "phase0":
@@ -133,17 +276,23 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 			return nil, errors.Wrap(err, "failed to decode phase0 beacon state response json")
 		}
 	case "altair":
-		altairBeaconState := apimiddleware.BeaconStateAltairJson{}
+		altairBeaconState := beaconStateAltairJson{}
 		if err := decoder.Decode(&altairBeaconState); err != nil {
 			return nil, errors.Wrap(err, "failed to decode altair beacon state response json")
 		}
 
-		for _, validatorIndex := range indices {
-			if int(validatorIndex) >= len(altairBeaconState.PreviousEpochParticipation) {
+		for idx, validatorPubKey := range pubkeys {
+			validatorIndex, ok := validatorPubkeyToIndex[validatorPubKey]
+			if !ok {
+				return nil, errors.Errorf("failed to get index for validator `%s`", validatorPubKey)
+			}
+
+			if uint64(validatorIndex) >= uint64(len(altairBeaconState.PreviousEpochParticipation)) {
 				return nil, errors.Errorf("validator index `%d` is too big for length `%d` of the current epoch participations", validatorIndex, len(altairBeaconState.CurrentEpochParticipation))
 			}
 
 			previousEpochParticipationString := altairBeaconState.PreviousEpochParticipation[validatorIndex]
+			log.Errorf("*******************previousEpochParticipationString: %s", previousEpochParticipationString)
 			previousEpochParticipation, err := strconv.ParseUint(previousEpochParticipationString, 10, 8)
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to parse current epoch participation `%s`", previousEpochParticipationString)
@@ -155,41 +304,41 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to get source flag from previous epoch participation for validator index `%d`", validatorIndex)
 			}
-			correctlyVotedSource[validatorIndex] = hasSourceFlag
+			correctlyVotedSource[idx] = hasSourceFlag
 
 			hasTargetFlag, err := altair.HasValidatorFlag(previousEpochParticipationByte, targetIdx)
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to get target flag from previous epoch participation for validator index `%d`", validatorIndex)
 			}
-			correctlyVotedTarget[validatorIndex] = hasTargetFlag
+			correctlyVotedTarget[idx] = hasTargetFlag
 
 			hasHeadFlag, err := altair.HasValidatorFlag(previousEpochParticipationByte, headIdx)
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to get head flag from previous epoch participation for validator index `%d`", validatorIndex)
 			}
-			correctlyVotedHead[validatorIndex] = hasHeadFlag
+			correctlyVotedHead[idx] = hasHeadFlag
 
 			balanceBeforeEpochTransition, err := strconv.ParseUint(altairBeaconState.Balances[validatorIndex], 10, 64)
 			if err != nil {
-				return nil, errors.Wrapf(err, "failed to parse balance before epoch transition `%d` for validator index `%d`", altairBeaconState.Balances[validatorIndex], validatorIndex)
+				return nil, errors.Wrapf(err, "failed to parse balance before epoch transition `%s` for validator index `%d`", altairBeaconState.Balances[validatorIndex], validatorIndex)
 			}
 
 			// TODO (pavignol): Correctly query the balances before epoch transition
-			balancesBeforeEpochTransition[validatorIndex] = balanceBeforeEpochTransition
+			balancesBeforeEpochTransition[idx] = balanceBeforeEpochTransition
 		}
 	case "bellatrix":
-		bellatrixBeaconState := apimiddleware.BeaconStateBellatrixJson{}
+		bellatrixBeaconState := beaconStateBellatrixJson{}
 		if err := decoder.Decode(&bellatrixBeaconState); err != nil {
 			return nil, errors.Wrap(err, "failed to decode bellatrix beacon state response json")
 		}
 	case "capella":
-		capellaBeaconState := apimiddleware.BeaconStateCapellaJson{}
+		capellaBeaconState := beaconStateCapellaJson{}
 		if err := decoder.Decode(&capellaBeaconState); err != nil {
 			return nil, errors.Wrap(err, "failed to decode capella beacon state response json")
 		}
 	}
 
-	return &ethpb.ValidatorPerformanceResponse{
+	validatorPerformanceResponse := &ethpb.ValidatorPerformanceResponse{
 		CurrentEffectiveBalances:      currentEffectiveBalances,
 		CorrectlyVotedSource:          correctlyVotedSource,
 		CorrectlyVotedTarget:          correctlyVotedTarget,
@@ -198,7 +347,28 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 		BalancesAfterEpochTransition:  balancesBeforeEpochTransition, // TODO (pavignol): Correctly query the balances before epoch transition
 		MissingValidators:             [][]byte{},                    // TODO (pavignol): Figure out which validators are missing
 		AverageActiveValidatorBalance: float32(activeValidatorBalanceSum) / float32(activeValidatorCount),
-	}, nil
+		PublicKeys:                    in.PublicKeys,
+	}
+
+	marshalledRest, err := json.Marshal(validatorPerformanceResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	grpcResponse, err := c.fallbackClient.GetValidatorPerformance(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+
+	marshalledGrpc, err := json.Marshal(grpcResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Errorf("*****************GRPC: %s", string(marshalledGrpc))
+	log.Errorf("*****************REST: %s", string(marshalledRest))
+
+	return validatorPerformanceResponse, nil
 }
 
 func (c beaconApiBeaconChainClient) GetValidatorParticipation(ctx context.Context, in *ethpb.GetValidatorParticipationRequest) (*ethpb.ValidatorParticipationResponse, error) {
