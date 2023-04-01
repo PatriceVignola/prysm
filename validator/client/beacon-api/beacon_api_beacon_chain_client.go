@@ -26,93 +26,6 @@ type beaconApiBeaconChainClient struct {
 	stateValidatorsProvider stateValidatorsProvider
 }
 
-// TODO (pavignol): Remove those structs once a better solution has been found for PreviousEpochParticipation and CurrentEpochParticipation
-type beaconStateAltairJson struct {
-	GenesisTime                 string                               `json:"genesis_time"`
-	GenesisValidatorsRoot       string                               `json:"genesis_validators_root" hex:"true"`
-	Slot                        string                               `json:"slot"`
-	Fork                        *apimiddleware.ForkJson              `json:"fork"`
-	LatestBlockHeader           *apimiddleware.BeaconBlockHeaderJson `json:"latest_block_header"`
-	BlockRoots                  []string                             `json:"block_roots" hex:"true"`
-	StateRoots                  []string                             `json:"state_roots" hex:"true"`
-	HistoricalRoots             []string                             `json:"historical_roots" hex:"true"`
-	Eth1Data                    *apimiddleware.Eth1DataJson          `json:"eth1_data"`
-	Eth1DataVotes               []*apimiddleware.Eth1DataJson        `json:"eth1_data_votes"`
-	Eth1DepositIndex            string                               `json:"eth1_deposit_index"`
-	Validators                  []*apimiddleware.ValidatorJson       `json:"validators"`
-	Balances                    []string                             `json:"balances"`
-	RandaoMixes                 []string                             `json:"randao_mixes" hex:"true"`
-	Slashings                   []string                             `json:"slashings"`
-	PreviousEpochParticipation  []string                             `json:"previous_epoch_participation"`
-	CurrentEpochParticipation   []string                             `json:"current_epoch_participation"`
-	JustificationBits           string                               `json:"justification_bits" hex:"true"`
-	PreviousJustifiedCheckpoint *apimiddleware.CheckpointJson        `json:"previous_justified_checkpoint"`
-	CurrentJustifiedCheckpoint  *apimiddleware.CheckpointJson        `json:"current_justified_checkpoint"`
-	FinalizedCheckpoint         *apimiddleware.CheckpointJson        `json:"finalized_checkpoint"`
-	InactivityScores            []string                             `json:"inactivity_scores"`
-	CurrentSyncCommittee        *apimiddleware.SyncCommitteeJson     `json:"current_sync_committee"`
-	NextSyncCommittee           *apimiddleware.SyncCommitteeJson     `json:"next_sync_committee"`
-}
-
-type beaconStateBellatrixJson struct {
-	GenesisTime                  string                                    `json:"genesis_time"`
-	GenesisValidatorsRoot        string                                    `json:"genesis_validators_root" hex:"true"`
-	Slot                         string                                    `json:"slot"`
-	Fork                         *apimiddleware.ForkJson                   `json:"fork"`
-	LatestBlockHeader            *apimiddleware.BeaconBlockHeaderJson      `json:"latest_block_header"`
-	BlockRoots                   []string                                  `json:"block_roots" hex:"true"`
-	StateRoots                   []string                                  `json:"state_roots" hex:"true"`
-	HistoricalRoots              []string                                  `json:"historical_roots" hex:"true"`
-	Eth1Data                     *apimiddleware.Eth1DataJson               `json:"eth1_data"`
-	Eth1DataVotes                []*apimiddleware.Eth1DataJson             `json:"eth1_data_votes"`
-	Eth1DepositIndex             string                                    `json:"eth1_deposit_index"`
-	Validators                   []*apimiddleware.ValidatorJson            `json:"validators"`
-	Balances                     []string                                  `json:"balances"`
-	RandaoMixes                  []string                                  `json:"randao_mixes" hex:"true"`
-	Slashings                    []string                                  `json:"slashings"`
-	PreviousEpochParticipation   []string                                  `json:"previous_epoch_participation"`
-	CurrentEpochParticipation    []string                                  `json:"current_epoch_participation"`
-	JustificationBits            string                                    `json:"justification_bits" hex:"true"`
-	PreviousJustifiedCheckpoint  *apimiddleware.CheckpointJson             `json:"previous_justified_checkpoint"`
-	CurrentJustifiedCheckpoint   *apimiddleware.CheckpointJson             `json:"current_justified_checkpoint"`
-	FinalizedCheckpoint          *apimiddleware.CheckpointJson             `json:"finalized_checkpoint"`
-	InactivityScores             []string                                  `json:"inactivity_scores"`
-	CurrentSyncCommittee         *apimiddleware.SyncCommitteeJson          `json:"current_sync_committee"`
-	NextSyncCommittee            *apimiddleware.SyncCommitteeJson          `json:"next_sync_committee"`
-	LatestExecutionPayloadHeader *apimiddleware.ExecutionPayloadHeaderJson `json:"latest_execution_payload_header"`
-}
-
-type beaconStateCapellaJson struct {
-	GenesisTime                  string                                           `json:"genesis_time"`
-	GenesisValidatorsRoot        string                                           `json:"genesis_validators_root" hex:"true"`
-	Slot                         string                                           `json:"slot"`
-	Fork                         *apimiddleware.ForkJson                          `json:"fork"`
-	LatestBlockHeader            *apimiddleware.BeaconBlockHeaderJson             `json:"latest_block_header"`
-	BlockRoots                   []string                                         `json:"block_roots" hex:"true"`
-	StateRoots                   []string                                         `json:"state_roots" hex:"true"`
-	HistoricalRoots              []string                                         `json:"historical_roots" hex:"true"`
-	Eth1Data                     *apimiddleware.Eth1DataJson                      `json:"eth1_data"`
-	Eth1DataVotes                []*apimiddleware.Eth1DataJson                    `json:"eth1_data_votes"`
-	Eth1DepositIndex             string                                           `json:"eth1_deposit_index"`
-	Validators                   []*apimiddleware.ValidatorJson                   `json:"validators"`
-	Balances                     []string                                         `json:"balances"`
-	RandaoMixes                  []string                                         `json:"randao_mixes" hex:"true"`
-	Slashings                    []string                                         `json:"slashings"`
-	PreviousEpochParticipation   []string                                         `json:"previous_epoch_participation"`
-	CurrentEpochParticipation    []string                                         `json:"current_epoch_participation"`
-	JustificationBits            string                                           `json:"justification_bits" hex:"true"`
-	PreviousJustifiedCheckpoint  *apimiddleware.CheckpointJson                    `json:"previous_justified_checkpoint"`
-	CurrentJustifiedCheckpoint   *apimiddleware.CheckpointJson                    `json:"current_justified_checkpoint"`
-	FinalizedCheckpoint          *apimiddleware.CheckpointJson                    `json:"finalized_checkpoint"`
-	InactivityScores             []string                                         `json:"inactivity_scores"`
-	CurrentSyncCommittee         *apimiddleware.SyncCommitteeJson                 `json:"current_sync_committee"`
-	NextSyncCommittee            *apimiddleware.SyncCommitteeJson                 `json:"next_sync_committee"`
-	LatestExecutionPayloadHeader *apimiddleware.ExecutionPayloadHeaderCapellaJson `json:"latest_execution_payload_header"`
-	NextWithdrawalIndex          string                                           `json:"next_withdrawal_index"`
-	NextWithdrawalValidatorIndex string                                           `json:"next_withdrawal_validator_index"`
-	HistoricalSummaries          []*apimiddleware.HistoricalSummaryJson           `json:"historical_summaries"`
-}
-
 func (c beaconApiBeaconChainClient) GetChainHead(ctx context.Context, in *empty.Empty) (*ethpb.ChainHead, error) {
 	if c.fallbackClient != nil {
 		return c.fallbackClient.GetChainHead(ctx, in)
@@ -276,7 +189,7 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 			return nil, errors.Wrap(err, "failed to decode phase0 beacon state response json")
 		}
 	case "altair":
-		altairBeaconState := beaconStateAltairJson{}
+		altairBeaconState := apimiddleware.BeaconStateAltairJson{}
 		if err := decoder.Decode(&altairBeaconState); err != nil {
 			return nil, errors.Wrap(err, "failed to decode altair beacon state response json")
 		}
@@ -327,12 +240,12 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 			balancesBeforeEpochTransition[idx] = balanceBeforeEpochTransition
 		}
 	case "bellatrix":
-		bellatrixBeaconState := beaconStateBellatrixJson{}
+		bellatrixBeaconState := apimiddleware.BeaconStateBellatrixJson{}
 		if err := decoder.Decode(&bellatrixBeaconState); err != nil {
 			return nil, errors.Wrap(err, "failed to decode bellatrix beacon state response json")
 		}
 	case "capella":
-		capellaBeaconState := beaconStateCapellaJson{}
+		capellaBeaconState := apimiddleware.BeaconStateCapellaJson{}
 		if err := decoder.Decode(&capellaBeaconState); err != nil {
 			return nil, errors.Wrap(err, "failed to decode capella beacon state response json")
 		}
