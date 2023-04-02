@@ -2,15 +2,18 @@ package beacon_api
 
 import (
 	"context"
+	"fmt"
 	neturl "net/url"
 	"strconv"
 
 	"github.com/pkg/errors"
 	rpcmiddleware "github.com/prysmaticlabs/prysm/v4/beacon-chain/rpc/apimiddleware"
+	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 )
 
 type stateValidatorsProvider interface {
 	GetStateValidators(context.Context, []string, []int64, []string) (*rpcmiddleware.StateValidatorsResponseJson, error)
+	GetStateValidatorsForSlot(context.Context, primitives.Slot, []string, []int64, []string) (*rpcmiddleware.StateValidatorsResponseJson, error)
 }
 
 type beaconApiStateValidatorsProvider struct {
@@ -22,6 +25,28 @@ func (c beaconApiStateValidatorsProvider) GetStateValidators(
 	stringPubkeys []string,
 	indexes []int64,
 	statuses []string,
+) (*rpcmiddleware.StateValidatorsResponseJson, error) {
+	const endpoint = "/eth/v1/beacon/states/head/validators"
+	return c.getStateValidatorsHelper(ctx, stringPubkeys, indexes, statuses, endpoint)
+}
+
+func (c beaconApiStateValidatorsProvider) GetStateValidatorsForSlot(
+	ctx context.Context,
+	slot primitives.Slot,
+	stringPubkeys []string,
+	indexes []int64,
+	statuses []string,
+) (*rpcmiddleware.StateValidatorsResponseJson, error) {
+	endpoint := fmt.Sprintf("/eth/v1/beacon/states/%d/validators", slot)
+	return c.getStateValidatorsHelper(ctx, stringPubkeys, indexes, statuses, endpoint)
+}
+
+func (c beaconApiStateValidatorsProvider) getStateValidatorsHelper(
+	ctx context.Context,
+	stringPubkeys []string,
+	indexes []int64,
+	statuses []string,
+	endpoint string,
 ) (*rpcmiddleware.StateValidatorsResponseJson, error) {
 	params := neturl.Values{}
 
@@ -46,11 +71,7 @@ func (c beaconApiStateValidatorsProvider) GetStateValidators(
 		params.Add("status", status)
 	}
 
-	url := buildURL(
-		"/eth/v1/beacon/states/head/validators",
-		params,
-	)
-
+	url := buildURL(endpoint, params)
 	stateValidatorsJson := &rpcmiddleware.StateValidatorsResponseJson{}
 
 	if _, err := c.jsonRestHandler.GetRestJsonResponse(ctx, url, stateValidatorsJson); err != nil {
