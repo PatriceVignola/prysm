@@ -13,6 +13,7 @@ go_library(
         "beacon_block_converter.go",
         "beacon_block_json_helpers.go",
         "beacon_block_proto_helpers.go",
+        "beacon_state_helpers.go",
         "domain_data.go",
         "doppelganger.go",
         "duties.go",
@@ -40,7 +41,6 @@ go_library(
     deps = [
         "//api/gateway/apimiddleware:go_default_library",
         "//beacon-chain/core/altair:go_default_library",
-        "//beacon-chain/core/epoch/precompute:go_default_library",
         "//beacon-chain/core/helpers:go_default_library",
         "//beacon-chain/core/signing:go_default_library",
         "//beacon-chain/rpc/apimiddleware:go_default_library",
@@ -51,7 +51,6 @@ go_library(
         "//network/forks:go_default_library",
         "//proto/engine/v1:go_default_library",
         "//proto/prysm/v1alpha1:go_default_library",
-        "//proto/prysm/v1alpha1/attestation:go_default_library",
         "//runtime/version:go_default_library",
         "//time/slots:go_default_library",
         "//validator/client/iface:go_default_library",
