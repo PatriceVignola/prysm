@@ -38,10 +38,6 @@ type StateProver interface {
 	NextSyncCommitteeProof(ctx context.Context) ([][]byte, error)
 }
 
-type ReadOnlySlot interface {
-	Slot() primitives.Slot
-}
-
 // ReadOnlyBeaconState defines a struct which only has read access to beacon state methods.
 type ReadOnlyBeaconState interface {
 	ReadOnlyBlockRoots
@@ -56,11 +52,11 @@ type ReadOnlyBeaconState interface {
 	ReadOnlyParticipation
 	ReadOnlyInactivity
 	ReadOnlySyncCommittee
-	ReadOnlySlot
 	ToProtoUnsafe() interface{}
 	ToProto() interface{}
 	GenesisTime() uint64
 	GenesisValidatorsRoot() []byte
+	Slot() primitives.Slot
 	Fork() *ethpb.Fork
 	LatestBlockHeader() *ethpb.BeaconBlockHeader
 	HistoricalRoots() ([][]byte, error)
