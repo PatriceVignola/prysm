@@ -11,9 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v4/beacon-chain/core/altair"
+	"github.com/prysmaticlabs/prysm/v4/beacon-chain/core/epoch/precompute"
 	"github.com/prysmaticlabs/prysm/v4/beacon-chain/rpc/apimiddleware"
-	"github.com/prysmaticlabs/prysm/v4/config/params"
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v4/time/slots"
@@ -146,6 +145,7 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 		validatorPubkeyToArrayIndex[pubkey] = idx
 	}
 
+	validatorIndexToArrayIndex := make(map[primitives.ValidatorIndex]int, len(pubkeys))
 	currentEffectiveBalances := make([]uint64, len(pubkeys))
 	balancesBeforeEpochTransition := make([]uint64, len(pubkeys))
 	validators := make([]*apimiddleware.ValidatorJson, len(pubkeys))
@@ -173,6 +173,8 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 			return nil, errors.Wrapf(err, "failed to parse state validator index `%s`", stateValidator.Index)
 		}
 
+		validatorIndexToArrayIndex[primitives.ValidatorIndex(validatorIndex)] = idx
+
 		effectiveBalance, err := strconv.ParseUint(stateValidator.Validator.EffectiveBalance, 10, 64)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to parse effective balance `%s` for validator index `%d`", stateValidator.Validator.EffectiveBalance, validatorIndex)
@@ -186,7 +188,7 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 	previousEpochParticipations := make([]byte, len(pubkeys))
 	var previousGlobalEpochParticipations []byte
 	balancesAfterEpochTransition := make([]uint64, len(pubkeys))
-	var globalValidators []*apimiddleware.ValidatorJson
+	// var globalValidators []*apimiddleware.ValidatorJson
 
 	switch beaconState := beaconState.(type) {
 	case apimiddleware.BeaconStateJson:
@@ -204,7 +206,7 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 			previousEpochParticipations[idx] = previousGlobalEpochParticipations[validatorIndex]
 		}
 
-		globalValidators = beaconState.Validators
+		// globalValidators = beaconState.Validators
 
 	case apimiddleware.BeaconStateAltairJson:
 		for idx, validatorPubKey := range pubkeys {
@@ -229,7 +231,6 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 	case apimiddleware.BeaconStateCapellaJson:
 	}
 
-	cfg := params.BeaconConfig()
 	correctlyVotedSourceGlobal := make([]bool, len(previousGlobalEpochParticipations))
 	correctlyVotedTargetGlobal := make([]bool, len(previousGlobalEpochParticipations))
 	correctlyVotedHeadGlobal := make([]bool, len(previousGlobalEpochParticipations))
@@ -237,66 +238,72 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 	correctlyVotedTarget := make([]bool, len(previousEpochParticipations))
 	correctlyVotedHead := make([]bool, len(previousEpochParticipations))
 
-	for idx, previousEpochParticipation := range previousEpochParticipations {
-		validator := validators[idx]
-		activePrevEpoch, err := isActiveAtEpoch(validator, currentEpoch-1)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to retrieve whether validator was active at epoch `%d`", currentEpoch)
+	/*
+		for idx, previousEpochParticipation := range previousGlobalEpochParticipations {
+			validator := globalValidators[idx]
+			activePrevEpoch, err := isActiveAtEpoch(validator, currentEpoch-1)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to retrieve whether validator was active at epoch `%d`", currentEpoch)
+			}
+
+			if activePrevEpoch {
+				hasSourceFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelySourceFlagIndex)
+				if err != nil {
+					return nil, errors.Wrap(err, "failed to get source flag from previous epoch participation")
+				}
+				correctlyVotedSourceGlobal[idx] = hasSourceFlag
+
+				hasTargetFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelyTargetFlagIndex)
+				if err != nil {
+					return nil, errors.Wrap(err, "failed to get target flag from previous epoch participation")
+				}
+				correctlyVotedTargetGlobal[idx] = hasTargetFlag
+
+				hasHeadFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelyHeadFlagIndex)
+				if err != nil {
+					return nil, errors.Wrap(err, "failed to get head flag from previous epoch participation")
+				}
+				correctlyVotedHeadGlobal[idx] = hasHeadFlag
+			}
 		}
-
-		if activePrevEpoch {
-			hasSourceFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelySourceFlagIndex)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to get source flag from previous epoch participation")
-			}
-			correctlyVotedSource[idx] = hasSourceFlag
-
-			hasTargetFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelyTargetFlagIndex)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to get target flag from previous epoch participation")
-			}
-			correctlyVotedTarget[idx] = hasTargetFlag
-
-			hasHeadFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelyHeadFlagIndex)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to get head flag from previous epoch participation")
-			}
-			correctlyVotedHead[idx] = hasHeadFlag
-		}
-	}
-
-	for idx, previousEpochParticipation := range previousGlobalEpochParticipations {
-		validator := globalValidators[idx]
-		activePrevEpoch, err := isActiveAtEpoch(validator, currentEpoch-1)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to retrieve whether validator was active at epoch `%d`", currentEpoch)
-		}
-
-		if activePrevEpoch {
-			hasSourceFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelySourceFlagIndex)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to get source flag from previous epoch participation")
-			}
-			correctlyVotedSourceGlobal[idx] = hasSourceFlag
-
-			hasTargetFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelyTargetFlagIndex)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to get target flag from previous epoch participation")
-			}
-			correctlyVotedTargetGlobal[idx] = hasTargetFlag
-
-			hasHeadFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelyHeadFlagIndex)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to get head flag from previous epoch participation")
-			}
-			correctlyVotedHeadGlobal[idx] = hasHeadFlag
-
-			printCorrectlyVoted(idx, correctlyVotedSourceGlobal, correctlyVotedTargetGlobal, correctlyVotedHeadGlobal)
-		}
-	}
+	*/
 
 	switch beaconState := beaconState.(type) {
 	case apimiddleware.BeaconStateJson:
+		minimalState, err := NewBeaconApiMinimalState(&beaconState)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create beacon api minimal state")
+		}
+
+		protoPreviousPendingAttestations, err := convertJsonPendingAttestationsToProto(beaconState.PreviousEpochAttestations)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to convert json pending attestations to proto")
+		}
+
+		for idx, pendingAttestation := range protoPreviousPendingAttestations {
+			attestingIndices, err := c.getAttestingIndices(ctx, &beaconState, beaconState.PreviousEpochAttestations[idx].Data, pendingAttestation.AggregationBits)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to get attesting indices")
+			}
+
+			isPrevEpochAttester, isPrevEpochTargetAttester, isPrevEpochHeadAttester, err := precompute.AttestedPrevEpoch(minimalState, pendingAttestation)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to retrieve whether attestation attested in previous epoch")
+			}
+
+			for _, validatorIndex := range attestingIndices {
+				correctlyVotedSourceGlobal[validatorIndex] = isPrevEpochAttester
+				correctlyVotedTargetGlobal[validatorIndex] = isPrevEpochTargetAttester
+				correctlyVotedHeadGlobal[validatorIndex] = isPrevEpochHeadAttester
+
+				if validatorArrayIndex, ok := validatorIndexToArrayIndex[validatorIndex]; ok {
+					correctlyVotedSource[validatorArrayIndex] = isPrevEpochAttester
+					correctlyVotedTarget[validatorArrayIndex] = isPrevEpochTargetAttester
+					correctlyVotedHead[validatorArrayIndex] = isPrevEpochHeadAttester
+				}
+			}
+		}
+
 		currentActiveEffectiveBalance, err := computeActiveEffectiveBalanceAtEpoch(beaconState.Validators, currentEpoch)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to compute active effective balance at epoch `%d`", currentEpoch)

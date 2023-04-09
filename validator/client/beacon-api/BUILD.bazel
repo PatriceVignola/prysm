@@ -41,6 +41,7 @@ go_library(
     deps = [
         "//api/gateway/apimiddleware:go_default_library",
         "//beacon-chain/core/altair:go_default_library",
+        "//beacon-chain/core/epoch/precompute:go_default_library",
         "//beacon-chain/core/helpers:go_default_library",
         "//beacon-chain/core/signing:go_default_library",
         "//beacon-chain/rpc/apimiddleware:go_default_library",

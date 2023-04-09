@@ -71,7 +71,7 @@ func ProcessAttestations(
 }
 
 // AttestedCurrentEpoch returns true if attestation `a` attested once in current epoch and/or epoch boundary block.
-func AttestedCurrentEpoch(s state.ReadOnlyBeaconState, a *ethpb.PendingAttestation) (bool, bool, error) {
+func AttestedCurrentEpoch(s state.ReadOnlyMinimalState, a *ethpb.PendingAttestation) (bool, bool, error) {
 	currentEpoch := time.CurrentEpoch(s)
 	var votedCurrentEpoch, votedTarget bool
 	// Did validator vote current epoch.
@@ -89,7 +89,7 @@ func AttestedCurrentEpoch(s state.ReadOnlyBeaconState, a *ethpb.PendingAttestati
 }
 
 // AttestedPrevEpoch returns true if attestation `a` attested once in previous epoch and epoch boundary block and/or the same head.
-func AttestedPrevEpoch(s state.ReadOnlyBeaconState, a *ethpb.PendingAttestation) (bool, bool, bool, error) {
+func AttestedPrevEpoch(s state.ReadOnlyMinimalState, a *ethpb.PendingAttestation) (bool, bool, bool, error) {
 	prevEpoch := time.PrevEpoch(s)
 	var votedPrevEpoch, votedTarget, votedHead bool
 	// Did validator vote previous epoch.
@@ -117,7 +117,7 @@ func AttestedPrevEpoch(s state.ReadOnlyBeaconState, a *ethpb.PendingAttestation)
 }
 
 // SameTarget returns true if attestation `a` attested to the same target block in state.
-func SameTarget(state state.ReadOnlyBeaconState, a *ethpb.PendingAttestation, e primitives.Epoch) (bool, error) {
+func SameTarget(state state.ReadOnlyMinimalState, a *ethpb.PendingAttestation, e primitives.Epoch) (bool, error) {
 	r, err := helpers.BlockRoot(state, e)
 	if err != nil {
 		return false, err
@@ -129,7 +129,7 @@ func SameTarget(state state.ReadOnlyBeaconState, a *ethpb.PendingAttestation, e 
 }
 
 // SameHead returns true if attestation `a` attested to the same block by attestation slot in state.
-func SameHead(state state.ReadOnlyBeaconState, a *ethpb.PendingAttestation) (bool, error) {
+func SameHead(state state.ReadOnlyMinimalState, a *ethpb.PendingAttestation) (bool, error) {
 	r, err := helpers.BlockRootAtSlot(state, a.Data.Slot)
 	if err != nil {
 		return false, err

@@ -15,6 +15,7 @@ import (
 	"github.com/prysmaticlabs/prysm/v4/config/params"
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	mathprysm "github.com/prysmaticlabs/prysm/v4/math"
+	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v4/time/slots"
 )
 
@@ -584,4 +585,92 @@ func (c beaconApiBeaconChainClient) getBeaconCommittee(ctx context.Context, slot
 	}
 
 	return stateCommittees.Data[0], nil
+}
+
+func convertJsonPendingAttestationsToProto(jsonPendingAttestations []*apimiddleware.PendingAttestationJson) ([]*ethpb.PendingAttestation, error) {
+	protoPendingAttestations := make([]*ethpb.PendingAttestation, len(jsonPendingAttestations))
+
+	for idx, jsonPendingAttestation := range jsonPendingAttestations {
+		if jsonPendingAttestation == nil {
+			return nil, errors.New("pending attestation is nil")
+		}
+
+		aggregationBits, err := hexutil.Decode(jsonPendingAttestation.AggregationBits)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to decode aggregation bits `%s`", aggregationBits)
+		}
+
+		attestationData, err := convertAttestationDataToProto(jsonPendingAttestation.Data)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to convert json attestation data to proto")
+		}
+
+		inclusionDelay, err := strconv.ParseUint(jsonPendingAttestation.InclusionDelay, 10, 64)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to parse pending attestation inclusion delay `%s`", jsonPendingAttestation.InclusionDelay)
+		}
+
+		proposerIndex, err := strconv.ParseUint(jsonPendingAttestation.ProposerIndex, 10, 64)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to parse pending attestation proposer index `%s`", jsonPendingAttestation.ProposerIndex)
+		}
+
+		protoPendingAttestations[idx] = &ethpb.PendingAttestation{
+			AggregationBits: bitfield.Bitlist(aggregationBits),
+			Data:            attestationData,
+			InclusionDelay:  primitives.Slot(inclusionDelay),
+			ProposerIndex:   primitives.ValidatorIndex(proposerIndex),
+		}
+	}
+
+	return protoPendingAttestations, nil
+}
+
+func (c beaconApiMinimalState) BlockRootAtIndex(idx uint64) ([]byte, error) {
+	if idx >= uint64(len(c.jsonState.BlockRoots)) {
+		return nil, errors.Errorf("block root index `%d` is too big for BlockRoots array", idx)
+	}
+
+	return c.blockRoots[idx], nil
+}
+
+func (c beaconApiMinimalState) BlockRoots() [][]byte {
+	return c.blockRoots
+}
+
+func (c beaconApiMinimalState) Slot() primitives.Slot {
+	return c.slot
+}
+
+type beaconApiMinimalState struct {
+	jsonState  *apimiddleware.BeaconStateJson
+	slot       primitives.Slot
+	blockRoots [][]byte
+}
+
+func NewBeaconApiMinimalState(jsonState *apimiddleware.BeaconStateJson) (*beaconApiMinimalState, error) {
+	if jsonState == nil {
+		return nil, errors.New("beacon state is nil")
+	}
+
+	slot, err := strconv.ParseUint(jsonState.Slot, 10, 64)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse slot `%s`", jsonState.Slot)
+	}
+
+	blockRoots := make([][]byte, len(jsonState.BlockRoots))
+	for idx, jsonBlockRoot := range jsonState.BlockRoots {
+		blockRoot, err := hexutil.Decode(jsonBlockRoot)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to decode block root `%s`", jsonBlockRoot)
+		}
+
+		blockRoots[idx] = blockRoot
+	}
+
+	return &beaconApiMinimalState{
+		jsonState:  jsonState,
+		slot:       primitives.Slot(slot),
+		blockRoots: blockRoots,
+	}, nil
 }

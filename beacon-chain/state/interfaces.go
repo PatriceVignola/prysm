@@ -38,9 +38,14 @@ type StateProver interface {
 	NextSyncCommitteeProof(ctx context.Context) ([][]byte, error)
 }
 
+type ReadOnlyMinimalState interface {
+	ReadOnlyBlockRoots
+	Slot() primitives.Slot
+}
+
 // ReadOnlyBeaconState defines a struct which only has read access to beacon state methods.
 type ReadOnlyBeaconState interface {
-	ReadOnlyBlockRoots
+	ReadOnlyMinimalState
 	ReadOnlyStateRoots
 	ReadOnlyRandaoMixes
 	ReadOnlyEth1Data
@@ -56,7 +61,6 @@ type ReadOnlyBeaconState interface {
 	ToProto() interface{}
 	GenesisTime() uint64
 	GenesisValidatorsRoot() []byte
-	Slot() primitives.Slot
 	Fork() *ethpb.Fork
 	LatestBlockHeader() *ethpb.BeaconBlockHeader
 	HistoricalRoots() ([][]byte, error)
