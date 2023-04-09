@@ -8,6 +8,7 @@ import (
 	"github.com/prysmaticlabs/prysm/v4/config/params"
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	"github.com/prysmaticlabs/prysm/v4/math"
+	"github.com/sirupsen/logrus"
 )
 
 type attesterRewardsFunc func(state.ReadOnlyBeaconState, *Balance, []*Validator) ([]uint64, []uint64, error)
@@ -71,6 +72,10 @@ func AttestationsDelta(state state.ReadOnlyBeaconState, pBal *Balance, vp []*Val
 	penalties := make([]uint64, numOfVals)
 	prevEpoch := time.PrevEpoch(state)
 	finalizedEpoch := state.FinalizedCheckpointEpoch()
+
+	logrus.Errorf("******************pBal.PrevEpochAttested: %d", pBal.PrevEpochAttested)
+	logrus.Errorf("******************pBal.PrevEpochTargetAttested: %d", pBal.PrevEpochTargetAttested)
+	logrus.Errorf("******************pBal.PrevEpochHeadAttested: %d", pBal.PrevEpochHeadAttested)
 
 	sqrtActiveCurrentEpoch := math.CachedSquareRoot(pBal.ActiveCurrentEpoch)
 	for i, v := range vp {

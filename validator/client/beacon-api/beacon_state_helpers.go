@@ -67,11 +67,11 @@ func getBlockRootAtSlot(beaconState *apimiddleware.BeaconStateJson, slot primiti
 
 func inactivityPenaltyQuotient(beaconState interface{}) (uint64, error) {
 	switch beaconState.(type) {
-	case apimiddleware.BeaconStateBellatrixJson, apimiddleware.BeaconStateAltairJson:
+	case *apimiddleware.BeaconStateBellatrixJson:
 		return params.BeaconConfig().InactivityPenaltyQuotientBellatrix, nil
 	case *apimiddleware.BeaconStateAltairJson:
 		return params.BeaconConfig().InactivityPenaltyQuotientAltair, nil
-	case apimiddleware.BeaconStateJson:
+	case *apimiddleware.BeaconStateJson:
 		return params.BeaconConfig().InactivityPenaltyQuotient, nil
 	}
 	return 0, errors.New("unsupported beacon state type")
@@ -174,7 +174,7 @@ func AttestationsDelta(
 		prevEpoch = currentEpoch - 1
 	}
 
-	if beaconState.FinalizedCheckpoint != nil {
+	if beaconState.FinalizedCheckpoint == nil {
 		return nil, nil, errors.New("beacon state finalized checkpoint is nil")
 	}
 
