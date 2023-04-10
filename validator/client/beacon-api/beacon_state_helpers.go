@@ -627,7 +627,7 @@ func convertJsonPendingAttestationsToProto(jsonPendingAttestations []*apimiddlew
 }
 
 func (c beaconApiMinimalState) BlockRootAtIndex(idx uint64) ([]byte, error) {
-	if idx >= uint64(len(c.jsonState.BlockRoots)) {
+	if idx >= uint64(len(c.blockRoots)) {
 		return nil, errors.Errorf("block root index `%d` is too big for BlockRoots array", idx)
 	}
 
@@ -642,10 +642,14 @@ func (c beaconApiMinimalState) Slot() primitives.Slot {
 	return c.slot
 }
 
+func (c beaconApiMinimalState) FinalizedCheckpointEpoch() primitives.Epoch {
+	return c.finalizedCheckpointEpoch
+}
+
 type beaconApiMinimalState struct {
-	jsonState  *apimiddleware.BeaconStateJson
-	slot       primitives.Slot
-	blockRoots [][]byte
+	slot                     primitives.Slot
+	blockRoots               [][]byte
+	finalizedCheckpointEpoch primitives.Epoch
 }
 
 func NewBeaconApiMinimalState(jsonState *apimiddleware.BeaconStateJson) (*beaconApiMinimalState, error) {
@@ -668,9 +672,18 @@ func NewBeaconApiMinimalState(jsonState *apimiddleware.BeaconStateJson) (*beacon
 		blockRoots[idx] = blockRoot
 	}
 
+	if jsonState.FinalizedCheckpoint == nil {
+		return nil, errors.New("finalized checkpoint is nil")
+	}
+
+	finalizedEpoch, err := strconv.ParseUint(jsonState.FinalizedCheckpoint.Epoch, 10, 64)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse finalized epoch `%s`", jsonState.FinalizedCheckpoint.Epoch)
+	}
+
 	return &beaconApiMinimalState{
-		jsonState:  jsonState,
-		slot:       primitives.Slot(slot),
-		blockRoots: blockRoots,
+		slot:                     primitives.Slot(slot),
+		blockRoots:               blockRoots,
+		finalizedCheckpointEpoch: primitives.Epoch(finalizedEpoch),
 	}, nil
 }

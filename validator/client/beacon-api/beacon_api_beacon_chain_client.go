@@ -12,6 +12,7 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/prysm/v4/beacon-chain/core/epoch/precompute"
+	beacontime "github.com/prysmaticlabs/prysm/v4/beacon-chain/core/time"
 	"github.com/prysmaticlabs/prysm/v4/beacon-chain/rpc/apimiddleware"
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
@@ -237,6 +238,8 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 	correctlyVotedSource := make([]bool, len(previousEpochParticipations))
 	correctlyVotedTarget := make([]bool, len(previousEpochParticipations))
 	correctlyVotedHead := make([]bool, len(previousEpochParticipations))
+	precomputeValidators := make([]*precompute.Validator, len(validators))
+	inclusionDistances := make([]primitives.Slot, len(validators))
 
 	/*
 		for idx, previousEpochParticipation := range previousGlobalEpochParticipations {
@@ -300,7 +303,35 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 					correctlyVotedSource[validatorArrayIndex] = isPrevEpochAttester
 					correctlyVotedTarget[validatorArrayIndex] = isPrevEpochTargetAttester
 					correctlyVotedHead[validatorArrayIndex] = isPrevEpochHeadAttester
+					inclusionDistances[validatorArrayIndex] = pendingAttestation.InclusionDelay
 				}
+			}
+		}
+
+		for idx := range precomputeValidators {
+			validator := validators[idx]
+			prevEpoch := beacontime.PrevEpoch(minimalState)
+
+			isActivePrevEpoch, err := isActiveAtEpoch(validator, prevEpoch)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to retrieve whether validator was active at previous epoch `%d`", prevEpoch)
+			}
+
+			withdrawableEpoch, err := strconv.ParseUint(validator.WithdrawableEpoch, 10, 64)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to parse validator withdrawable epoch `%s`", validator.WithdrawableEpoch)
+			}
+
+			precomputeValidators[idx] = &precompute.Validator{
+				IsSlashed:                    validator.Slashed,
+				CurrentEpochEffectiveBalance: currentEffectiveBalances[idx],
+				IsPrevEpochAttester:          correctlyVotedSource[idx],
+				IsPrevEpochSourceAttester:    correctlyVotedSource[idx],
+				IsPrevEpochTargetAttester:    correctlyVotedTarget[idx],
+				IsPrevEpochHeadAttester:      correctlyVotedHead[idx],
+				InclusionDistance:            inclusionDistances[idx],
+				IsActivePrevEpoch:            isActivePrevEpoch,
+				IsWithdrawableCurrentEpoch:   currentEpoch >= primitives.Epoch(withdrawableEpoch),
 			}
 		}
 
@@ -314,38 +345,26 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 			return nil, errors.Wrapf(err, "failed to compute source attested effective balance at epoch `%d`", currentEpoch)
 		}
 
-		log.Errorf("*******************prevEpochSourceAttestedEffectiveBalance: %d", prevEpochSourceAttestedEffectiveBalance)
-
 		prevEpochTargetAttestedEffectiveBalance, err := computeAttestedEffectiveBalance(beaconState.Validators, correctlyVotedTargetGlobal)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to compute target attested effective balance at epoch `%d`", currentEpoch)
 		}
-
-		log.Errorf("*******************prevEpochTargetAttestedEffectiveBalance: %d", prevEpochTargetAttestedEffectiveBalance)
 
 		prevEpochHeadAttestedEffectiveBalance, err := computeAttestedEffectiveBalance(beaconState.Validators, correctlyVotedHeadGlobal)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to compute head attested effective balance at epoch `%d`", currentEpoch)
 		}
 
-		log.Errorf("*******************prevEpochHeadAttestedEffectiveBalance: %d", prevEpochHeadAttestedEffectiveBalance)
+		precomputeBalance := &precompute.Balance{
+			PrevEpochAttested:       prevEpochSourceAttestedEffectiveBalance,
+			PrevEpochTargetAttested: prevEpochTargetAttestedEffectiveBalance,
+			PrevEpochHeadAttested:   prevEpochHeadAttestedEffectiveBalance,
+			ActiveCurrentEpoch:      currentActiveEffectiveBalance,
+		}
 
-		inactivityScores := make([]uint64, len(validators))
-
-		rewards, penalties, err := AttestationsDelta(
-			&beaconState,
-			validators,
-			currentActiveEffectiveBalance,
-			prevEpochSourceAttestedEffectiveBalance,
-			prevEpochTargetAttestedEffectiveBalance,
-			prevEpochHeadAttestedEffectiveBalance,
-			correctlyVotedSource,
-			correctlyVotedTarget,
-			correctlyVotedHead,
-			inactivityScores,
-		)
+		rewards, penalties, err := precompute.AttestationsDelta(minimalState, precomputeBalance, precomputeValidators)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to get rewards and penalties")
+			return nil, errors.Wrap(err, "failed to get attestation rewards and penalties")
 		}
 
 		for idx := range validators {
@@ -387,20 +406,6 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 	log.Errorf("*****************REST: %s", string(marshalledRest))
 
 	return validatorPerformanceResponse, nil
-}
-
-func printCorrectlyVoted(idx int, correctlyVotedSourceGlobal []bool, correctlyVotedTargetGlobal []bool, correctlyVotedHeadGlobal []bool) {
-	if !correctlyVotedSourceGlobal[idx] {
-		log.Errorf("************correctlyVotedSourceGlobal[idx] == false for validator index `%d`", idx)
-	}
-
-	if !correctlyVotedTargetGlobal[idx] {
-		log.Errorf("************correctlyVotedTargetGlobal[idx] == false for validator index `%d`", idx)
-	}
-
-	if !correctlyVotedHeadGlobal[idx] {
-		log.Errorf("************correctlyVotedHeadGlobal[idx] == false for validator index `%d`", idx)
-	}
 }
 
 func (c beaconApiBeaconChainClient) GetValidatorParticipation(ctx context.Context, in *ethpb.GetValidatorParticipationRequest) (*ethpb.ValidatorParticipationResponse, error) {

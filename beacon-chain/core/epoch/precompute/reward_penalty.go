@@ -8,10 +8,9 @@ import (
 	"github.com/prysmaticlabs/prysm/v4/config/params"
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	"github.com/prysmaticlabs/prysm/v4/math"
-	"github.com/sirupsen/logrus"
 )
 
-type attesterRewardsFunc func(state.ReadOnlyBeaconState, *Balance, []*Validator) ([]uint64, []uint64, error)
+type attesterRewardsFunc func(state.ReadOnlyMinimalState, *Balance, []*Validator) ([]uint64, []uint64, error)
 type proposerRewardsFunc func(state.ReadOnlyBeaconState, *Balance, []*Validator) ([]uint64, error)
 
 // ProcessRewardsAndPenaltiesPrecompute processes the rewards and penalties of individual validator.
@@ -66,16 +65,11 @@ func ProcessRewardsAndPenaltiesPrecompute(
 
 // AttestationsDelta computes and returns the rewards and penalties differences for individual validators based on the
 // voting records.
-func AttestationsDelta(state state.ReadOnlyBeaconState, pBal *Balance, vp []*Validator) ([]uint64, []uint64, error) {
-	numOfVals := state.NumValidators()
-	rewards := make([]uint64, numOfVals)
-	penalties := make([]uint64, numOfVals)
+func AttestationsDelta(state state.ReadOnlyMinimalState, pBal *Balance, vp []*Validator) ([]uint64, []uint64, error) {
+	rewards := make([]uint64, len(vp))
+	penalties := make([]uint64, len(vp))
 	prevEpoch := time.PrevEpoch(state)
 	finalizedEpoch := state.FinalizedCheckpointEpoch()
-
-	logrus.Errorf("******************pBal.PrevEpochAttested: %d", pBal.PrevEpochAttested)
-	logrus.Errorf("******************pBal.PrevEpochTargetAttested: %d", pBal.PrevEpochTargetAttested)
-	logrus.Errorf("******************pBal.PrevEpochHeadAttested: %d", pBal.PrevEpochHeadAttested)
 
 	sqrtActiveCurrentEpoch := math.CachedSquareRoot(pBal.ActiveCurrentEpoch)
 	for i, v := range vp {
