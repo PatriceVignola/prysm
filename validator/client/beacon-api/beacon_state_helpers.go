@@ -24,6 +24,7 @@ type beaconApiMinimalState struct {
 	blockRoots               [][]byte
 	finalizedCheckpointEpoch primitives.Epoch
 	version                  string
+	numValidators            int
 }
 
 type minimalBeaconStateAltairJson struct {
@@ -34,6 +35,54 @@ type minimalBeaconStateAltairJson struct {
 	blockRoots                 []string
 	finalizedCheckpoint        *apimiddleware.CheckpointJson
 	inactivityScores           []string
+}
+
+func (c beaconApiMinimalState) BlockRootAtIndex(idx uint64) ([]byte, error) {
+	if idx >= uint64(len(c.blockRoots)) {
+		return nil, errors.Errorf("block root index `%d` is too big for BlockRoots array", idx)
+	}
+
+	return c.blockRoots[idx], nil
+}
+
+func (c beaconApiMinimalState) BlockRoots() [][]byte {
+	return c.blockRoots
+}
+
+func (c beaconApiMinimalState) Slot() primitives.Slot {
+	return c.slot
+}
+
+func (c beaconApiMinimalState) FinalizedCheckpointEpoch() primitives.Epoch {
+	return c.finalizedCheckpointEpoch
+}
+
+func (c beaconApiMinimalState) ProportionalSlashingMultiplier() (uint64, error) {
+	switch c.version {
+	case "bellatrix", "capella":
+		return params.BeaconConfig().ProportionalSlashingMultiplierBellatrix, nil
+	case "altair":
+		return params.BeaconConfig().ProportionalSlashingMultiplierAltair, nil
+	case "phase0":
+		return params.BeaconConfig().ProportionalSlashingMultiplier, nil
+	}
+	return 0, errors.Errorf("unsupported version `%s` for ProportionalSlashingMultiplier()", c.version)
+}
+
+func (c beaconApiMinimalState) InactivityPenaltyQuotient() (uint64, error) {
+	switch c.version {
+	case "bellatrix", "capella":
+		return params.BeaconConfig().InactivityPenaltyQuotientBellatrix, nil
+	case "altair":
+		return params.BeaconConfig().InactivityPenaltyQuotientAltair, nil
+	case "phase0":
+		return params.BeaconConfig().InactivityPenaltyQuotient, nil
+	}
+	return 0, errors.Errorf("unsupported version `%s` for InactivityPenaltyQuotient()", c.version)
+}
+
+func (c beaconApiMinimalState) NumValidators() int {
+	return c.numValidators
 }
 
 func NewBeaconApiMinimalState(jsonState apimiddleware.BeaconStateJson, version string) (*beaconApiMinimalState, error) {
@@ -66,6 +115,7 @@ func NewBeaconApiMinimalState(jsonState apimiddleware.BeaconStateJson, version s
 		blockRoots:               blockRoots,
 		finalizedCheckpointEpoch: primitives.Epoch(finalizedEpoch),
 		version:                  version,
+		numValidators:            len(jsonState.Validators),
 	}, nil
 }
 
@@ -99,6 +149,7 @@ func NewBeaconApiMinimalAltairState(jsonState minimalBeaconStateAltairJson, vers
 		blockRoots:               blockRoots,
 		finalizedCheckpointEpoch: primitives.Epoch(finalizedEpoch),
 		version:                  version,
+		numValidators:            len(jsonState.validators),
 	}, nil
 }
 
@@ -297,11 +348,10 @@ func convertValidatorsToPrecomputeValidators(
 	correctlyVotedTarget []bool,
 	correctlyVotedHead []bool,
 	inclusionDistances []primitives.Slot,
+	proposerIndices []primitives.ValidatorIndex,
 ) ([]*precompute.Validator, error) {
 	precomputeValidators := make([]*precompute.Validator, len(validators))
-	for idx := range precomputeValidators {
-		validator := validators[idx]
-
+	for idx, validator := range validators {
 		var prevEpoch primitives.Epoch
 		if currentEpoch > 0 {
 			prevEpoch = currentEpoch - 1
@@ -324,9 +374,16 @@ func convertValidatorsToPrecomputeValidators(
 			IsPrevEpochSourceAttester:    correctlyVotedSource[idx],
 			IsPrevEpochTargetAttester:    correctlyVotedTarget[idx],
 			IsPrevEpochHeadAttester:      correctlyVotedHead[idx],
-			InclusionDistance:            inclusionDistances[idx],
 			IsActivePrevEpoch:            isActivePrevEpoch,
 			IsWithdrawableCurrentEpoch:   currentEpoch >= primitives.Epoch(withdrawableEpoch),
+		}
+
+		if inclusionDistances != nil {
+			precomputeValidators[idx].InclusionDistance = inclusionDistances[idx]
+		}
+
+		if proposerIndices != nil {
+			precomputeValidators[idx].ProposerIndex = proposerIndices[idx]
 		}
 	}
 
@@ -340,8 +397,6 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 	pubkeys [][]byte,
 	validatorPubkeyToIndex map[string]primitives.ValidatorIndex,
 	validatorIndexToArrayIndex map[primitives.ValidatorIndex]int,
-	currentEffectiveBalances []uint64,
-	validators []*apimiddleware.ValidatorJson,
 	balancesBeforeEpochTransition []uint64,
 ) (*ethpb.ValidatorPerformanceResponse, error) {
 	minimalState, err := NewBeaconApiMinimalState(beaconState, version)
@@ -361,13 +416,16 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 		return nil, errors.Wrap(err, "failed to convert json pending attestations to proto")
 	}
 
-	correctlyVotedSource := make([]bool, len(validators))
-	correctlyVotedTarget := make([]bool, len(validators))
-	correctlyVotedHead := make([]bool, len(validators))
+	correctlyVotedSource := make([]bool, len(pubkeys))
+	correctlyVotedTarget := make([]bool, len(pubkeys))
+	correctlyVotedHead := make([]bool, len(pubkeys))
+	currentEffectiveBalances := make([]uint64, len(pubkeys))
 	correctlyVotedSourceGlobal := make([]bool, len(beaconState.Validators))
 	correctlyVotedTargetGlobal := make([]bool, len(beaconState.Validators))
 	correctlyVotedHeadGlobal := make([]bool, len(beaconState.Validators))
-	inclusionDistances := make([]primitives.Slot, len(validators))
+	proposerIndicesGlobal := make([]primitives.ValidatorIndex, len(beaconState.Validators))
+	inclusionDistancesGlobal := make([]primitives.Slot, len(beaconState.Validators))
+	currentEffectiveBalancesGlobal := make([]uint64, len(beaconState.Validators))
 
 	for _, pendingAttestation := range protoPreviousPendingAttestations {
 		isPrevEpochAttester, isPrevEpochTargetAttester, isPrevEpochHeadAttester, err := precompute.AttestedPrevEpoch(minimalState, pendingAttestation)
@@ -384,24 +442,39 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 			correctlyVotedSourceGlobal[validatorIndex] = isPrevEpochAttester
 			correctlyVotedTargetGlobal[validatorIndex] = isPrevEpochTargetAttester
 			correctlyVotedHeadGlobal[validatorIndex] = isPrevEpochHeadAttester
+			proposerIndicesGlobal[validatorIndex] = pendingAttestation.ProposerIndex
+			inclusionDistancesGlobal[validatorIndex] = pendingAttestation.InclusionDelay
 
 			if validatorArrayIndex, ok := validatorIndexToArrayIndex[validatorIndex]; ok {
 				correctlyVotedSource[validatorArrayIndex] = isPrevEpochAttester
 				correctlyVotedTarget[validatorArrayIndex] = isPrevEpochTargetAttester
 				correctlyVotedHead[validatorArrayIndex] = isPrevEpochHeadAttester
-				inclusionDistances[validatorArrayIndex] = pendingAttestation.InclusionDelay
 			}
 		}
 	}
 
-	precomputeValidators, err := convertValidatorsToPrecomputeValidators(
-		validators,
+	for validatorIndex, validator := range beaconState.Validators {
+		effectiveBalance, err := strconv.ParseUint(validator.EffectiveBalance, 10, 64)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to parse effective balance `%s`", validator.EffectiveBalance)
+		}
+
+		currentEffectiveBalancesGlobal[validatorIndex] = effectiveBalance
+
+		if validatorArrayIndex, ok := validatorIndexToArrayIndex[primitives.ValidatorIndex(validatorIndex)]; ok {
+			currentEffectiveBalances[validatorArrayIndex] = effectiveBalance
+		}
+	}
+
+	precomputeValidatorsGlobal, err := convertValidatorsToPrecomputeValidators(
+		beaconState.Validators,
 		currentEpoch,
-		currentEffectiveBalances,
-		correctlyVotedSource,
-		correctlyVotedTarget,
-		correctlyVotedHead,
-		inclusionDistances,
+		currentEffectiveBalancesGlobal,
+		correctlyVotedSourceGlobal,
+		correctlyVotedTargetGlobal,
+		correctlyVotedHeadGlobal,
+		inclusionDistancesGlobal,
+		proposerIndicesGlobal,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to convert json validators to precompute validators")
@@ -434,14 +507,24 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 		ActiveCurrentEpoch:      currentActiveEffectiveBalance,
 	}
 
-	rewards, penalties, err := precompute.AttestationsDelta(minimalState, precomputeBalance, precomputeValidators)
+	attestationRewardsGlobal, attestationPenaltiesGlobal, err := precompute.AttestationsDelta(minimalState, precomputeBalance, precomputeValidatorsGlobal)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get attestation rewards and penalties")
 	}
 
+	proposerRewardsGlobal, err := precompute.ProposersDelta(minimalState, precomputeBalance, precomputeValidatorsGlobal)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get proposer rewards and penalties")
+	}
+
+	// We retrieved rewards and penalties for the entire validator set, so we need to extract them for only the ones we care about
 	balancesAfterEpochTransition := make([]uint64, len(pubkeys))
-	for idx := range validators {
-		balancesAfterEpochTransition[idx] = balancesBeforeEpochTransition[idx] + rewards[idx] - penalties[idx]
+	for validatorIndex := range proposerRewardsGlobal {
+		if validatorArrayIndex, ok := validatorIndexToArrayIndex[primitives.ValidatorIndex(validatorIndex)]; ok {
+			rewards := attestationRewardsGlobal[validatorIndex] + proposerRewardsGlobal[validatorIndex]
+			penalties := attestationPenaltiesGlobal[validatorIndex]
+			balancesAfterEpochTransition[validatorArrayIndex] = balancesBeforeEpochTransition[validatorArrayIndex] + rewards - penalties
+		}
 	}
 
 	validatorPerformanceResponse := &ethpb.ValidatorPerformanceResponse{
@@ -450,8 +533,8 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 		CorrectlyVotedTarget:          correctlyVotedTarget,
 		CorrectlyVotedHead:            correctlyVotedHead,
 		BalancesBeforeEpochTransition: balancesBeforeEpochTransition,
-		BalancesAfterEpochTransition:  balancesAfterEpochTransition, // TODO (pavignol): Correctly query the balances before epoch transition
-		MissingValidators:             [][]byte{},                   // TODO (pavignol): Figure out which validators are missing
+		BalancesAfterEpochTransition:  balancesAfterEpochTransition,
+		MissingValidators:             [][]byte{}, // TODO (pavignol): Figure out which validators are missing
 		PublicKeys:                    pubkeys,
 	}
 
@@ -566,8 +649,6 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 		}
 	}
 
-	inclusionDistances := make([]primitives.Slot, len(validators))
-
 	precomputeValidators, err := convertValidatorsToPrecomputeValidators(
 		validators,
 		currentEpoch,
@@ -575,7 +656,8 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 		correctlyVotedSource,
 		correctlyVotedTarget,
 		correctlyVotedHead,
-		inclusionDistances,
+		nil,
+		nil,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to convert json validators to precompute validators")
@@ -624,8 +706,8 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 		CorrectlyVotedTarget:          correctlyVotedTarget,
 		CorrectlyVotedHead:            correctlyVotedHead,
 		BalancesBeforeEpochTransition: balancesBeforeEpochTransition,
-		BalancesAfterEpochTransition:  balancesAfterEpochTransition, // TODO (pavignol): Correctly query the balances before epoch transition
-		MissingValidators:             [][]byte{},                   // TODO (pavignol): Figure out which validators are missing
+		BalancesAfterEpochTransition:  balancesAfterEpochTransition,
+		MissingValidators:             [][]byte{}, // TODO (pavignol): Figure out which validators are missing
 		PublicKeys:                    pubkeys,
 		InactivityScores:              inactivityScores,
 	}
@@ -651,48 +733,4 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 	log.Errorf("*****************%s REST: %s", version, string(marshalledRest))
 
 	return validatorPerformanceResponse, nil
-}
-
-func (c beaconApiMinimalState) BlockRootAtIndex(idx uint64) ([]byte, error) {
-	if idx >= uint64(len(c.blockRoots)) {
-		return nil, errors.Errorf("block root index `%d` is too big for BlockRoots array", idx)
-	}
-
-	return c.blockRoots[idx], nil
-}
-
-func (c beaconApiMinimalState) BlockRoots() [][]byte {
-	return c.blockRoots
-}
-
-func (c beaconApiMinimalState) Slot() primitives.Slot {
-	return c.slot
-}
-
-func (c beaconApiMinimalState) FinalizedCheckpointEpoch() primitives.Epoch {
-	return c.finalizedCheckpointEpoch
-}
-
-func (c beaconApiMinimalState) ProportionalSlashingMultiplier() (uint64, error) {
-	switch c.version {
-	case "bellatrix", "capella":
-		return params.BeaconConfig().ProportionalSlashingMultiplierBellatrix, nil
-	case "altair":
-		return params.BeaconConfig().ProportionalSlashingMultiplierAltair, nil
-	case "phase0":
-		return params.BeaconConfig().ProportionalSlashingMultiplier, nil
-	}
-	return 0, errors.Errorf("unsupported version `%s` for ProportionalSlashingMultiplier()", c.version)
-}
-
-func (c beaconApiMinimalState) InactivityPenaltyQuotient() (uint64, error) {
-	switch c.version {
-	case "bellatrix", "capella":
-		return params.BeaconConfig().InactivityPenaltyQuotientBellatrix, nil
-	case "altair":
-		return params.BeaconConfig().InactivityPenaltyQuotientAltair, nil
-	case "phase0":
-		return params.BeaconConfig().InactivityPenaltyQuotient, nil
-	}
-	return 0, errors.Errorf("unsupported version `%s` for InactivityPenaltyQuotient()", c.version)
 }

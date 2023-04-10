@@ -190,8 +190,6 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 			in.PublicKeys,
 			validatorPubkeyToIndex,
 			validatorIndexToArrayIndex,
-			currentEffectiveBalances,
-			validators,
 			balancesBeforeEpochTransition,
 		)
 

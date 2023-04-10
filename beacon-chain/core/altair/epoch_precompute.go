@@ -256,8 +256,9 @@ func ProcessRewardsAndPenaltiesPrecompute(
 // AttestationsDelta computes and returns the rewards and penalties differences for individual validators based on the
 // voting records.
 func AttestationsDelta(beaconState state.ReadOnlyMinimalState, bal *precompute.Balance, vals []*precompute.Validator) (rewards, penalties []uint64, err error) {
-	rewards = make([]uint64, len(vals))
-	penalties = make([]uint64, len(vals))
+	numofVals := beaconState.NumValidators()
+	rewards = make([]uint64, numofVals)
+	penalties = make([]uint64, numofVals)
 
 	cfg := params.BeaconConfig()
 	prevEpoch := time.PrevEpoch(beaconState)

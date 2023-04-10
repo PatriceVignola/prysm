@@ -43,6 +43,7 @@ type ReadOnlyMinimalState interface {
 	SpecParametersProvider
 	FinalizedCheckpointEpoch() primitives.Epoch
 	Slot() primitives.Slot
+	NumValidators() int
 }
 
 // ReadOnlyBeaconState defines a struct which only has read access to beacon state methods.

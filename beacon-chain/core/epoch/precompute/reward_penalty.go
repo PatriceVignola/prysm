@@ -11,7 +11,7 @@ import (
 )
 
 type attesterRewardsFunc func(state.ReadOnlyMinimalState, *Balance, []*Validator) ([]uint64, []uint64, error)
-type proposerRewardsFunc func(state.ReadOnlyBeaconState, *Balance, []*Validator) ([]uint64, error)
+type proposerRewardsFunc func(state.ReadOnlyMinimalState, *Balance, []*Validator) ([]uint64, error)
 
 // ProcessRewardsAndPenaltiesPrecompute processes the rewards and penalties of individual validator.
 // This is an optimized version by passing in precomputed validator attesting records and and total epoch balances.
@@ -66,8 +66,9 @@ func ProcessRewardsAndPenaltiesPrecompute(
 // AttestationsDelta computes and returns the rewards and penalties differences for individual validators based on the
 // voting records.
 func AttestationsDelta(state state.ReadOnlyMinimalState, pBal *Balance, vp []*Validator) ([]uint64, []uint64, error) {
-	rewards := make([]uint64, len(vp))
-	penalties := make([]uint64, len(vp))
+	numofVals := state.NumValidators()
+	rewards := make([]uint64, numofVals)
+	penalties := make([]uint64, numofVals)
 	prevEpoch := time.PrevEpoch(state)
 	finalizedEpoch := state.FinalizedCheckpointEpoch()
 
@@ -155,7 +156,7 @@ func AttestationDelta(pBal *Balance, sqrtActiveCurrentEpoch uint64, v *Validator
 
 // ProposersDelta computes and returns the rewards and penalties differences for individual validators based on the
 // proposer inclusion records.
-func ProposersDelta(state state.ReadOnlyBeaconState, pBal *Balance, vp []*Validator) ([]uint64, error) {
+func ProposersDelta(state state.ReadOnlyMinimalState, pBal *Balance, vp []*Validator) ([]uint64, error) {
 	numofVals := state.NumValidators()
 	rewards := make([]uint64, numofVals)
 
