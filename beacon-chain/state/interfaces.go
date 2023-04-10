@@ -40,6 +40,7 @@ type StateProver interface {
 
 type ReadOnlyMinimalState interface {
 	ReadOnlyBlockRoots
+	SpecParametersProvider
 	FinalizedCheckpointEpoch() primitives.Epoch
 	Slot() primitives.Slot
 }

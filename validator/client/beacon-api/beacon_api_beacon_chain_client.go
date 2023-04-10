@@ -11,12 +11,9 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v4/beacon-chain/core/epoch/precompute"
-	beacontime "github.com/prysmaticlabs/prysm/v4/beacon-chain/core/time"
 	"github.com/prysmaticlabs/prysm/v4/beacon-chain/rpc/apimiddleware"
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v4/time/slots"
 	"github.com/prysmaticlabs/prysm/v4/validator/client/iface"
 )
 
@@ -132,8 +129,6 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 		beaconState = capellaBeaconState
 	}
 
-	currentEpoch := slots.ToEpoch(currentSlot)
-
 	currentStateValidatorsResponse, err := c.stateValidatorsProvider.GetStateValidatorsForSlot(ctx, currentSlot, pubkeys, nil, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get current state validators for slot `%d` and indices `%v`", currentSlot, in.PublicKeys)
@@ -186,226 +181,64 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 		validators[idx] = stateValidator.Validator
 	}
 
-	previousEpochParticipations := make([]byte, len(pubkeys))
-	var previousGlobalEpochParticipations []byte
-	balancesAfterEpochTransition := make([]uint64, len(pubkeys))
-	// var globalValidators []*apimiddleware.ValidatorJson
-
 	switch beaconState := beaconState.(type) {
 	case apimiddleware.BeaconStateJson:
-		previousGlobalEpochParticipations, err = c.translateParticipation(ctx, &beaconState, beaconState.PreviousEpochAttestations)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to translate previous epoch attestations")
-		}
-
-		for idx, validatorPubKey := range pubkeys {
-			validatorIndex, ok := validatorPubkeyToIndex[validatorPubKey]
-			if !ok {
-				return nil, errors.Errorf("failed to get index for validator `%s`", validatorPubKey)
-			}
-
-			previousEpochParticipations[idx] = previousGlobalEpochParticipations[validatorIndex]
-		}
-
-		// globalValidators = beaconState.Validators
+		return c.getPhase0ValidatorPerformance(
+			ctx,
+			beaconState,
+			beaconStateJson.Version,
+			in.PublicKeys,
+			validatorPubkeyToIndex,
+			validatorIndexToArrayIndex,
+			currentEffectiveBalances,
+			validators,
+			balancesBeforeEpochTransition,
+		)
 
 	case apimiddleware.BeaconStateAltairJson:
-		for idx, validatorPubKey := range pubkeys {
-			validatorIndex, ok := validatorPubkeyToIndex[validatorPubKey]
-			if !ok {
-				return nil, errors.Errorf("failed to get index for validator `%s`", validatorPubKey)
-			}
-
-			if uint64(validatorIndex) >= uint64(len(beaconState.PreviousEpochParticipation)) {
-				return nil, errors.Errorf("validator index `%d` is too big for length `%d` of the previous epoch participations", validatorIndex, len(beaconState.PreviousEpochParticipation))
-			}
-
-			previousEpochParticipation, err := strconv.ParseUint(beaconState.PreviousEpochParticipation[validatorIndex], 10, 8)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to parse previous epoch participation `%s`", beaconState.PreviousEpochParticipation[validatorIndex])
-			}
-
-			previousEpochParticipations[idx] = byte(previousEpochParticipation)
-
+		minimalAltairJson := minimalBeaconStateAltairJson{
+			validators:                 beaconState.Validators,
+			balances:                   beaconState.Balances,
+			previousEpochParticipation: beaconState.PreviousEpochParticipation,
+			slot:                       beaconState.Slot,
+			blockRoots:                 beaconState.BlockRoots,
+			finalizedCheckpoint:        beaconState.FinalizedCheckpoint,
+			inactivityScores:           beaconState.InactivityScores,
 		}
+
+		return c.getAltairValidatorPerformance(
+			minimalAltairJson,
+			beaconStateJson.Version,
+			in.PublicKeys,
+			validatorPubkeyToIndex,
+			validatorIndexToArrayIndex,
+			currentEffectiveBalances,
+			validators,
+		)
 	case apimiddleware.BeaconStateBellatrixJson:
+		minimalAltairJson := minimalBeaconStateAltairJson{
+			validators:                 beaconState.Validators,
+			balances:                   beaconState.Balances,
+			previousEpochParticipation: beaconState.PreviousEpochParticipation,
+			slot:                       beaconState.Slot,
+			blockRoots:                 beaconState.BlockRoots,
+			finalizedCheckpoint:        beaconState.FinalizedCheckpoint,
+			inactivityScores:           beaconState.InactivityScores,
+		}
+
+		return c.getAltairValidatorPerformance(
+			minimalAltairJson,
+			beaconStateJson.Version,
+			in.PublicKeys,
+			validatorPubkeyToIndex,
+			validatorIndexToArrayIndex,
+			currentEffectiveBalances,
+			validators,
+		)
 	case apimiddleware.BeaconStateCapellaJson:
 	}
 
-	correctlyVotedSourceGlobal := make([]bool, len(previousGlobalEpochParticipations))
-	correctlyVotedTargetGlobal := make([]bool, len(previousGlobalEpochParticipations))
-	correctlyVotedHeadGlobal := make([]bool, len(previousGlobalEpochParticipations))
-	correctlyVotedSource := make([]bool, len(previousEpochParticipations))
-	correctlyVotedTarget := make([]bool, len(previousEpochParticipations))
-	correctlyVotedHead := make([]bool, len(previousEpochParticipations))
-	precomputeValidators := make([]*precompute.Validator, len(validators))
-	inclusionDistances := make([]primitives.Slot, len(validators))
-
-	/*
-		for idx, previousEpochParticipation := range previousGlobalEpochParticipations {
-			validator := globalValidators[idx]
-			activePrevEpoch, err := isActiveAtEpoch(validator, currentEpoch-1)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to retrieve whether validator was active at epoch `%d`", currentEpoch)
-			}
-
-			if activePrevEpoch {
-				hasSourceFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelySourceFlagIndex)
-				if err != nil {
-					return nil, errors.Wrap(err, "failed to get source flag from previous epoch participation")
-				}
-				correctlyVotedSourceGlobal[idx] = hasSourceFlag
-
-				hasTargetFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelyTargetFlagIndex)
-				if err != nil {
-					return nil, errors.Wrap(err, "failed to get target flag from previous epoch participation")
-				}
-				correctlyVotedTargetGlobal[idx] = hasTargetFlag
-
-				hasHeadFlag, err := altair.HasValidatorFlag(previousEpochParticipation, cfg.TimelyHeadFlagIndex)
-				if err != nil {
-					return nil, errors.Wrap(err, "failed to get head flag from previous epoch participation")
-				}
-				correctlyVotedHeadGlobal[idx] = hasHeadFlag
-			}
-		}
-	*/
-
-	switch beaconState := beaconState.(type) {
-	case apimiddleware.BeaconStateJson:
-		minimalState, err := NewBeaconApiMinimalState(&beaconState)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create beacon api minimal state")
-		}
-
-		protoPreviousPendingAttestations, err := convertJsonPendingAttestationsToProto(beaconState.PreviousEpochAttestations)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to convert json pending attestations to proto")
-		}
-
-		for idx, pendingAttestation := range protoPreviousPendingAttestations {
-			attestingIndices, err := c.getAttestingIndices(ctx, &beaconState, beaconState.PreviousEpochAttestations[idx].Data, pendingAttestation.AggregationBits)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to get attesting indices")
-			}
-
-			isPrevEpochAttester, isPrevEpochTargetAttester, isPrevEpochHeadAttester, err := precompute.AttestedPrevEpoch(minimalState, pendingAttestation)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to retrieve whether attestation attested in previous epoch")
-			}
-
-			for _, validatorIndex := range attestingIndices {
-				correctlyVotedSourceGlobal[validatorIndex] = isPrevEpochAttester
-				correctlyVotedTargetGlobal[validatorIndex] = isPrevEpochTargetAttester
-				correctlyVotedHeadGlobal[validatorIndex] = isPrevEpochHeadAttester
-
-				if validatorArrayIndex, ok := validatorIndexToArrayIndex[validatorIndex]; ok {
-					correctlyVotedSource[validatorArrayIndex] = isPrevEpochAttester
-					correctlyVotedTarget[validatorArrayIndex] = isPrevEpochTargetAttester
-					correctlyVotedHead[validatorArrayIndex] = isPrevEpochHeadAttester
-					inclusionDistances[validatorArrayIndex] = pendingAttestation.InclusionDelay
-				}
-			}
-		}
-
-		for idx := range precomputeValidators {
-			validator := validators[idx]
-			prevEpoch := beacontime.PrevEpoch(minimalState)
-
-			isActivePrevEpoch, err := isActiveAtEpoch(validator, prevEpoch)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to retrieve whether validator was active at previous epoch `%d`", prevEpoch)
-			}
-
-			withdrawableEpoch, err := strconv.ParseUint(validator.WithdrawableEpoch, 10, 64)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to parse validator withdrawable epoch `%s`", validator.WithdrawableEpoch)
-			}
-
-			precomputeValidators[idx] = &precompute.Validator{
-				IsSlashed:                    validator.Slashed,
-				CurrentEpochEffectiveBalance: currentEffectiveBalances[idx],
-				IsPrevEpochAttester:          correctlyVotedSource[idx],
-				IsPrevEpochSourceAttester:    correctlyVotedSource[idx],
-				IsPrevEpochTargetAttester:    correctlyVotedTarget[idx],
-				IsPrevEpochHeadAttester:      correctlyVotedHead[idx],
-				InclusionDistance:            inclusionDistances[idx],
-				IsActivePrevEpoch:            isActivePrevEpoch,
-				IsWithdrawableCurrentEpoch:   currentEpoch >= primitives.Epoch(withdrawableEpoch),
-			}
-		}
-
-		currentActiveEffectiveBalance, err := computeActiveEffectiveBalanceAtEpoch(beaconState.Validators, currentEpoch)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to compute active effective balance at epoch `%d`", currentEpoch)
-		}
-
-		prevEpochSourceAttestedEffectiveBalance, err := computeAttestedEffectiveBalance(beaconState.Validators, correctlyVotedSourceGlobal)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to compute source attested effective balance at epoch `%d`", currentEpoch)
-		}
-
-		prevEpochTargetAttestedEffectiveBalance, err := computeAttestedEffectiveBalance(beaconState.Validators, correctlyVotedTargetGlobal)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to compute target attested effective balance at epoch `%d`", currentEpoch)
-		}
-
-		prevEpochHeadAttestedEffectiveBalance, err := computeAttestedEffectiveBalance(beaconState.Validators, correctlyVotedHeadGlobal)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to compute head attested effective balance at epoch `%d`", currentEpoch)
-		}
-
-		precomputeBalance := &precompute.Balance{
-			PrevEpochAttested:       prevEpochSourceAttestedEffectiveBalance,
-			PrevEpochTargetAttested: prevEpochTargetAttestedEffectiveBalance,
-			PrevEpochHeadAttested:   prevEpochHeadAttestedEffectiveBalance,
-			ActiveCurrentEpoch:      currentActiveEffectiveBalance,
-		}
-
-		rewards, penalties, err := precompute.AttestationsDelta(minimalState, precomputeBalance, precomputeValidators)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to get attestation rewards and penalties")
-		}
-
-		for idx := range validators {
-			balancesAfterEpochTransition[idx] = balancesBeforeEpochTransition[idx] + rewards[idx] - penalties[idx]
-		}
-
-	case apimiddleware.BeaconStateAltairJson:
-	case apimiddleware.BeaconStateBellatrixJson:
-	case apimiddleware.BeaconStateCapellaJson:
-	}
-
-	validatorPerformanceResponse := &ethpb.ValidatorPerformanceResponse{
-		CurrentEffectiveBalances:      currentEffectiveBalances,
-		CorrectlyVotedSource:          correctlyVotedSource,
-		CorrectlyVotedTarget:          correctlyVotedTarget,
-		CorrectlyVotedHead:            correctlyVotedHead,
-		BalancesBeforeEpochTransition: balancesBeforeEpochTransition,
-		BalancesAfterEpochTransition:  balancesAfterEpochTransition, // TODO (pavignol): Correctly query the balances before epoch transition
-		MissingValidators:             [][]byte{},                   // TODO (pavignol): Figure out which validators are missing
-		PublicKeys:                    in.PublicKeys,
-	}
-
-	marshalledRest, err := json.Marshal(validatorPerformanceResponse)
-	if err != nil {
-		return nil, err
-	}
-
-	grpcResponse, err := c.fallbackClient.GetValidatorPerformance(ctx, in)
-	if err != nil {
-		return nil, err
-	}
-
-	marshalledGrpc, err := json.Marshal(grpcResponse)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Errorf("*****************GRPC: %s", string(marshalledGrpc))
-	log.Errorf("*****************REST: %s", string(marshalledRest))
-
-	return validatorPerformanceResponse, nil
+	return nil, errors.Errorf("unsupported version `%s` for GetValidatorPerformance()", beaconStateJson.Version)
 }
 
 func (c beaconApiBeaconChainClient) GetValidatorParticipation(ctx context.Context, in *ethpb.GetValidatorParticipationRequest) (*ethpb.ValidatorParticipationResponse, error) {

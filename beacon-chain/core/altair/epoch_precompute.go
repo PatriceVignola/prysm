@@ -10,7 +10,6 @@ import (
 	"github.com/prysmaticlabs/prysm/v4/beacon-chain/state"
 	"github.com/prysmaticlabs/prysm/v4/config/params"
 	"github.com/prysmaticlabs/prysm/v4/math"
-	"github.com/sirupsen/logrus"
 	"go.opencensus.io/trace"
 )
 
@@ -256,10 +255,9 @@ func ProcessRewardsAndPenaltiesPrecompute(
 
 // AttestationsDelta computes and returns the rewards and penalties differences for individual validators based on the
 // voting records.
-func AttestationsDelta(beaconState state.BeaconState, bal *precompute.Balance, vals []*precompute.Validator) (rewards, penalties []uint64, err error) {
-	numOfVals := beaconState.NumValidators()
-	rewards = make([]uint64, numOfVals)
-	penalties = make([]uint64, numOfVals)
+func AttestationsDelta(beaconState state.ReadOnlyMinimalState, bal *precompute.Balance, vals []*precompute.Validator) (rewards, penalties []uint64, err error) {
+	rewards = make([]uint64, len(vals))
+	penalties = make([]uint64, len(vals))
 
 	cfg := params.BeaconConfig()
 	prevEpoch := time.PrevEpoch(beaconState)
@@ -276,10 +274,6 @@ func AttestationsDelta(beaconState state.BeaconState, bal *precompute.Balance, v
 		return nil, nil, err
 	}
 	inactivityDenominator := bias * inactivityPenaltyQuotient
-
-	logrus.Errorf("***************bal.PrevEpochAttested: %d", bal.PrevEpochAttested)
-	logrus.Errorf("***************bal.PrevEpochTargetAttested: %d", bal.PrevEpochTargetAttested)
-	logrus.Errorf("***************bal.PrevEpochHeadAttested: %d", bal.PrevEpochHeadAttested)
 
 	for i, v := range vals {
 		rewards[i], penalties[i], err = attestationDelta(bal, v, baseRewardMultiplier, inactivityDenominator, leak)
