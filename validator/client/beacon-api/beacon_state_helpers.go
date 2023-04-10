@@ -627,6 +627,7 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 		BalancesAfterEpochTransition:  balancesAfterEpochTransition, // TODO (pavignol): Correctly query the balances before epoch transition
 		MissingValidators:             [][]byte{},                   // TODO (pavignol): Figure out which validators are missing
 		PublicKeys:                    pubkeys,
+		InactivityScores:              inactivityScores,
 	}
 
 	marshalledRest, err := json.Marshal(validatorPerformanceResponse)
