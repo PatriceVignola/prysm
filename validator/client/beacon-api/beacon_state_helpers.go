@@ -395,9 +395,6 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 	beaconState apimiddleware.BeaconStateJson,
 	version string,
 	pubkeys [][]byte,
-	validatorPubkeyToIndex map[string]primitives.ValidatorIndex,
-	validatorIndexToArrayIndex map[primitives.ValidatorIndex]int,
-	balancesBeforeEpochTransition []uint64,
 ) (*ethpb.ValidatorPerformanceResponse, error) {
 	minimalState, err := NewBeaconApiMinimalState(beaconState, version)
 	if err != nil {
@@ -416,10 +413,44 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 		return nil, errors.Wrap(err, "failed to convert json pending attestations to proto")
 	}
 
-	correctlyVotedSource := make([]bool, len(pubkeys))
-	correctlyVotedTarget := make([]bool, len(pubkeys))
-	correctlyVotedHead := make([]bool, len(pubkeys))
-	currentEffectiveBalances := make([]uint64, len(pubkeys))
+	validatorPubkeyToArrayIndex := make(map[string]int)
+	for idx, pubkey := range pubkeys {
+		pubkeyString := hexutil.Encode(pubkey)
+		validatorPubkeyToArrayIndex[pubkeyString] = idx
+	}
+
+	activePubkeys := make([][]byte, 0)
+	inactivePubkeys := make([][]byte, 0)
+
+	for _, validator := range beaconState.Validators {
+		if pubkeyIndex, ok := validatorPubkeyToArrayIndex[validator.PublicKey]; ok {
+			activationEpoch, err := strconv.ParseUint(validator.ActivationEpoch, 10, 64)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to parse activation epoch `%s`", validator.ActivationEpoch)
+			}
+
+			exitEpoch, err := strconv.ParseUint(validator.ExitEpoch, 10, 64)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to parse exit epoch `%s`", validator.ExitEpoch)
+			}
+
+			isActive := primitives.Epoch(activationEpoch) <= currentEpoch && currentEpoch < primitives.Epoch(exitEpoch)
+			pubkey := pubkeys[pubkeyIndex]
+
+			if isActive {
+				validatorPubkeyToArrayIndex[validator.PublicKey] = len(activePubkeys)
+				activePubkeys = append(activePubkeys, pubkey)
+			} else {
+				inactivePubkeys = append(inactivePubkeys, pubkey)
+				delete(validatorPubkeyToArrayIndex, validator.PublicKey)
+			}
+		}
+	}
+
+	correctlyVotedSource := make([]bool, len(activePubkeys))
+	correctlyVotedTarget := make([]bool, len(activePubkeys))
+	correctlyVotedHead := make([]bool, len(activePubkeys))
+	currentEffectiveBalances := make([]uint64, len(activePubkeys))
 	correctlyVotedSourceGlobal := make([]bool, len(beaconState.Validators))
 	correctlyVotedTargetGlobal := make([]bool, len(beaconState.Validators))
 	correctlyVotedHeadGlobal := make([]bool, len(beaconState.Validators))
@@ -445,7 +476,8 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 			proposerIndicesGlobal[validatorIndex] = pendingAttestation.ProposerIndex
 			inclusionDistancesGlobal[validatorIndex] = pendingAttestation.InclusionDelay
 
-			if validatorArrayIndex, ok := validatorIndexToArrayIndex[validatorIndex]; ok {
+			pubkey := beaconState.Validators[validatorIndex].PublicKey
+			if validatorArrayIndex, ok := validatorPubkeyToArrayIndex[pubkey]; ok {
 				correctlyVotedSource[validatorArrayIndex] = isPrevEpochAttester
 				correctlyVotedTarget[validatorArrayIndex] = isPrevEpochTargetAttester
 				correctlyVotedHead[validatorArrayIndex] = isPrevEpochHeadAttester
@@ -461,7 +493,7 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 
 		currentEffectiveBalancesGlobal[validatorIndex] = effectiveBalance
 
-		if validatorArrayIndex, ok := validatorIndexToArrayIndex[primitives.ValidatorIndex(validatorIndex)]; ok {
+		if validatorArrayIndex, ok := validatorPubkeyToArrayIndex[validator.PublicKey]; ok {
 			currentEffectiveBalances[validatorArrayIndex] = effectiveBalance
 		}
 	}
@@ -518,12 +550,20 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 	}
 
 	// We retrieved rewards and penalties for the entire validator set, so we need to extract them for only the ones we care about
-	balancesAfterEpochTransition := make([]uint64, len(pubkeys))
-	for validatorIndex := range proposerRewardsGlobal {
-		if validatorArrayIndex, ok := validatorIndexToArrayIndex[primitives.ValidatorIndex(validatorIndex)]; ok {
+	balancesBeforeEpochTransition := make([]uint64, len(activePubkeys))
+	balancesAfterEpochTransition := make([]uint64, len(activePubkeys))
+	for validatorIndex, validator := range beaconState.Validators {
+		if validatorArrayIndex, ok := validatorPubkeyToArrayIndex[validator.PublicKey]; ok {
+			balanceBeforeTransition, err := strconv.ParseUint(beaconState.Balances[validatorIndex], 10, 64)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to parse balance `%s`", beaconState.Balances[validatorIndex])
+			}
+
+			balancesBeforeEpochTransition[validatorArrayIndex] = balanceBeforeTransition
+
 			rewards := attestationRewardsGlobal[validatorIndex] + proposerRewardsGlobal[validatorIndex]
 			penalties := attestationPenaltiesGlobal[validatorIndex]
-			balancesAfterEpochTransition[validatorArrayIndex] = balancesBeforeEpochTransition[validatorArrayIndex] + rewards - penalties
+			balancesAfterEpochTransition[validatorArrayIndex] = balanceBeforeTransition + rewards - penalties
 		}
 	}
 
@@ -534,8 +574,8 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 		CorrectlyVotedHead:            correctlyVotedHead,
 		BalancesBeforeEpochTransition: balancesBeforeEpochTransition,
 		BalancesAfterEpochTransition:  balancesAfterEpochTransition,
-		MissingValidators:             [][]byte{}, // TODO (pavignol): Figure out which validators are missing
-		PublicKeys:                    pubkeys,
+		MissingValidators:             inactivePubkeys,
+		PublicKeys:                    activePubkeys,
 	}
 
 	marshalledRest, err := json.Marshal(validatorPerformanceResponse)
@@ -565,10 +605,6 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 	beaconState minimalBeaconStateAltairJson,
 	version string,
 	pubkeys [][]byte,
-	validatorPubkeyToIndex map[string]primitives.ValidatorIndex,
-	validatorIndexToArrayIndex map[primitives.ValidatorIndex]int,
-	currentEffectiveBalances []uint64,
-	validators []*apimiddleware.ValidatorJson,
 ) (*ethpb.ValidatorPerformanceResponse, error) {
 	minimalState, err := NewBeaconApiMinimalAltairState(beaconState, version)
 	if err != nil {
@@ -577,18 +613,53 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 
 	currentEpoch := slots.ToEpoch(minimalState.Slot())
 
+	validatorPubkeyToArrayIndex := make(map[string]int)
+	for idx, pubkey := range pubkeys {
+		pubkeyString := hexutil.Encode(pubkey)
+		validatorPubkeyToArrayIndex[pubkeyString] = idx
+	}
+
+	activePubkeys := make([][]byte, 0)
+	inactivePubkeys := make([][]byte, 0)
+
+	for _, validator := range beaconState.validators {
+		if pubkeyIndex, ok := validatorPubkeyToArrayIndex[validator.PublicKey]; ok {
+			activationEpoch, err := strconv.ParseUint(validator.ActivationEpoch, 10, 64)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to parse activation epoch `%s`", validator.ActivationEpoch)
+			}
+
+			exitEpoch, err := strconv.ParseUint(validator.ExitEpoch, 10, 64)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to parse exit epoch `%s`", validator.ExitEpoch)
+			}
+
+			isActive := primitives.Epoch(activationEpoch) <= currentEpoch && currentEpoch < primitives.Epoch(exitEpoch)
+			pubkey := pubkeys[pubkeyIndex]
+
+			if isActive {
+				validatorPubkeyToArrayIndex[validator.PublicKey] = len(activePubkeys)
+				activePubkeys = append(activePubkeys, pubkey)
+			} else {
+				inactivePubkeys = append(inactivePubkeys, pubkey)
+				delete(validatorPubkeyToArrayIndex, validator.PublicKey)
+			}
+		}
+	}
+
 	cfg := params.BeaconConfig()
 
-	correctlyVotedSource := make([]bool, len(validators))
-	correctlyVotedTarget := make([]bool, len(validators))
-	correctlyVotedHead := make([]bool, len(validators))
+	correctlyVotedSource := make([]bool, len(activePubkeys))
+	correctlyVotedTarget := make([]bool, len(activePubkeys))
+	correctlyVotedHead := make([]bool, len(activePubkeys))
 	correctlyVotedSourceGlobal := make([]bool, len(beaconState.validators))
 	correctlyVotedTargetGlobal := make([]bool, len(beaconState.validators))
 	correctlyVotedHeadGlobal := make([]bool, len(beaconState.validators))
-	balancesBeforeEpochTransition := make([]uint64, len(validators))
+	balancesBeforeEpochTransition := make([]uint64, len(activePubkeys))
+	inactivityScores := make([]uint64, len(activePubkeys))
+	currentEffectiveBalances := make([]uint64, len(activePubkeys))
 
-	inactivityScores := make([]uint64, len(validators))
-
+	validators := make([]*apimiddleware.ValidatorJson, len(activePubkeys))
 	for validatorIndex, validator := range beaconState.validators {
 		if uint64(validatorIndex) >= uint64(len(beaconState.previousEpochParticipation)) {
 			return nil, errors.Errorf("validator index `%d` is too big for length `%d` of the previous epoch participations", validatorIndex, len(beaconState.previousEpochParticipation))
@@ -604,7 +675,7 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 			return nil, errors.Wrapf(err, "failed to retrieve whether validator was active at epoch `%d`", currentEpoch)
 		}
 
-		validatorArrayIndex, isOurValidator := validatorIndexToArrayIndex[primitives.ValidatorIndex(validatorIndex)]
+		validatorArrayIndex, isOurValidator := validatorPubkeyToArrayIndex[validator.PublicKey]
 
 		if activePrevEpoch {
 			hasSourceFlag, err := altair.HasValidatorFlag(byte(previousEpochParticipation), cfg.TimelySourceFlagIndex)
@@ -637,15 +708,21 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to parse balance `%s`", beaconState.balances[validatorIndex])
 			}
-
 			balancesBeforeEpochTransition[validatorArrayIndex] = balance
 
 			inactivityScore, err := strconv.ParseUint(beaconState.inactivityScores[validatorIndex], 10, 64)
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to parse inactivity score `%s`", beaconState.inactivityScores[validatorIndex])
 			}
-
 			inactivityScores[validatorArrayIndex] = inactivityScore
+
+			currentEffectiveBalance, err := strconv.ParseUint(validator.EffectiveBalance, 10, 64)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to parse current effective balance `%s`", validator.EffectiveBalance)
+			}
+			currentEffectiveBalances[validatorArrayIndex] = currentEffectiveBalance
+
+			validators[validatorArrayIndex] = validator
 		}
 	}
 
@@ -695,7 +772,7 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 		return nil, errors.Wrap(err, "failed to get attestation rewards and penalties")
 	}
 
-	balancesAfterEpochTransition := make([]uint64, len(pubkeys))
+	balancesAfterEpochTransition := make([]uint64, len(activePubkeys))
 	for idx := range validators {
 		balancesAfterEpochTransition[idx] = balancesBeforeEpochTransition[idx] + rewards[idx] - penalties[idx]
 	}
@@ -707,8 +784,8 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 		CorrectlyVotedHead:            correctlyVotedHead,
 		BalancesBeforeEpochTransition: balancesBeforeEpochTransition,
 		BalancesAfterEpochTransition:  balancesAfterEpochTransition,
-		MissingValidators:             [][]byte{}, // TODO (pavignol): Figure out which validators are missing
-		PublicKeys:                    pubkeys,
+		MissingValidators:             inactivePubkeys,
+		PublicKeys:                    activePubkeys,
 		InactivityScores:              inactivityScores,
 	}
 

@@ -5,14 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/prysm/v4/beacon-chain/rpc/apimiddleware"
-	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v4/validator/client/iface"
 )
@@ -88,12 +86,6 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 		pubkeys[idx] = hexutil.Encode(pubkeyBytes)
 	}
 
-	var currentSlot primitives.Slot
-
-	var beaconState interface{}
-	// inactivityScores := make([]uint64, len(pubkeys))
-	// TODO (pavignol): Convert phase0 beacon statein terms of altair/bellatrix/capella
-
 	switch beaconStateJson.Version {
 	case "phase0":
 		phase0BeaconState := apimiddleware.BeaconStateJson{}
@@ -101,139 +93,77 @@ func (c beaconApiBeaconChainClient) GetValidatorPerformance(ctx context.Context,
 			return nil, errors.Wrap(err, "failed to decode phase0 beacon state response json")
 		}
 
-		slot, err := strconv.ParseUint(phase0BeaconState.Slot, 10, 64)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to parse beacon state slot `%s`", phase0BeaconState.Slot)
-		}
-		currentSlot = primitives.Slot(slot)
-		beaconState = phase0BeaconState
+		return c.getPhase0ValidatorPerformance(
+			ctx,
+			phase0BeaconState,
+			beaconStateJson.Version,
+			in.PublicKeys,
+		)
 
 	case "altair":
 		altairBeaconState := apimiddleware.BeaconStateAltairJson{}
 		if err := decoder.Decode(&altairBeaconState); err != nil {
 			return nil, errors.Wrap(err, "failed to decode altair beacon state response json")
 		}
-		beaconState = altairBeaconState
+
+		minimalAltairJson := minimalBeaconStateAltairJson{
+			validators:                 altairBeaconState.Validators,
+			balances:                   altairBeaconState.Balances,
+			previousEpochParticipation: altairBeaconState.PreviousEpochParticipation,
+			slot:                       altairBeaconState.Slot,
+			blockRoots:                 altairBeaconState.BlockRoots,
+			finalizedCheckpoint:        altairBeaconState.FinalizedCheckpoint,
+			inactivityScores:           altairBeaconState.InactivityScores,
+		}
+
+		return c.getAltairValidatorPerformance(
+			minimalAltairJson,
+			beaconStateJson.Version,
+			in.PublicKeys,
+		)
 
 	case "bellatrix":
 		bellatrixBeaconState := apimiddleware.BeaconStateBellatrixJson{}
 		if err := decoder.Decode(&bellatrixBeaconState); err != nil {
 			return nil, errors.Wrap(err, "failed to decode bellatrix beacon state response json")
 		}
-		beaconState = bellatrixBeaconState
+
+		minimalAltairJson := minimalBeaconStateAltairJson{
+			validators:                 bellatrixBeaconState.Validators,
+			balances:                   bellatrixBeaconState.Balances,
+			previousEpochParticipation: bellatrixBeaconState.PreviousEpochParticipation,
+			slot:                       bellatrixBeaconState.Slot,
+			blockRoots:                 bellatrixBeaconState.BlockRoots,
+			finalizedCheckpoint:        bellatrixBeaconState.FinalizedCheckpoint,
+			inactivityScores:           bellatrixBeaconState.InactivityScores,
+		}
+
+		return c.getAltairValidatorPerformance(
+			minimalAltairJson,
+			beaconStateJson.Version,
+			in.PublicKeys,
+		)
 	case "capella":
 		capellaBeaconState := apimiddleware.BeaconStateCapellaJson{}
 		if err := decoder.Decode(&capellaBeaconState); err != nil {
 			return nil, errors.Wrap(err, "failed to decode capella beacon state response json")
 		}
-		beaconState = capellaBeaconState
-	}
 
-	currentStateValidatorsResponse, err := c.stateValidatorsProvider.GetStateValidatorsForSlot(ctx, currentSlot, pubkeys, nil, nil)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get current state validators for slot `%d` and indices `%v`", currentSlot, in.PublicKeys)
-	}
-
-	// The spec doesn't guarantee that validators returned from /eth/v1/beacon/states/{state_id}/validators will be returned in the same order
-	// as the input indices, so we need to have this mapping
-	validatorPubkeyToArrayIndex := make(map[string]int, len(pubkeys))
-	for idx, pubkey := range pubkeys {
-		validatorPubkeyToArrayIndex[pubkey] = idx
-	}
-
-	validatorIndexToArrayIndex := make(map[primitives.ValidatorIndex]int, len(pubkeys))
-	currentEffectiveBalances := make([]uint64, len(pubkeys))
-	balancesBeforeEpochTransition := make([]uint64, len(pubkeys))
-	validators := make([]*apimiddleware.ValidatorJson, len(pubkeys))
-
-	validatorPubkeyToIndex := make(map[string]primitives.ValidatorIndex, len(pubkeys))
-	for _, stateValidator := range currentStateValidatorsResponse.Data {
-		if stateValidator == nil || stateValidator.Validator == nil {
-			return nil, errors.New("current state validator is nil")
-		}
-
-		idx, ok := validatorPubkeyToArrayIndex[stateValidator.Validator.PublicKey]
-		if !ok {
-			return nil, errors.Errorf("failed to get array index for validator `%s`", stateValidator.Validator.PublicKey)
-		}
-
-		balance, err := strconv.ParseUint(stateValidator.Balance, 10, 64)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to parse balance before epoch transition `%s` for validator `%s`", stateValidator.Balance, stateValidator.Validator.PublicKey)
-		}
-
-		balancesBeforeEpochTransition[idx] = balance
-
-		validatorIndex, err := strconv.ParseUint(stateValidator.Index, 10, 64)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to parse state validator index `%s`", stateValidator.Index)
-		}
-
-		validatorIndexToArrayIndex[primitives.ValidatorIndex(validatorIndex)] = idx
-
-		effectiveBalance, err := strconv.ParseUint(stateValidator.Validator.EffectiveBalance, 10, 64)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to parse effective balance `%s` for validator index `%d`", stateValidator.Validator.EffectiveBalance, validatorIndex)
-		}
-		currentEffectiveBalances[idx] = effectiveBalance
-
-		validatorPubkeyToIndex[stateValidator.Validator.PublicKey] = primitives.ValidatorIndex(validatorIndex)
-		validators[idx] = stateValidator.Validator
-	}
-
-	switch beaconState := beaconState.(type) {
-	case apimiddleware.BeaconStateJson:
-		return c.getPhase0ValidatorPerformance(
-			ctx,
-			beaconState,
-			beaconStateJson.Version,
-			in.PublicKeys,
-			validatorPubkeyToIndex,
-			validatorIndexToArrayIndex,
-			balancesBeforeEpochTransition,
-		)
-
-	case apimiddleware.BeaconStateAltairJson:
 		minimalAltairJson := minimalBeaconStateAltairJson{
-			validators:                 beaconState.Validators,
-			balances:                   beaconState.Balances,
-			previousEpochParticipation: beaconState.PreviousEpochParticipation,
-			slot:                       beaconState.Slot,
-			blockRoots:                 beaconState.BlockRoots,
-			finalizedCheckpoint:        beaconState.FinalizedCheckpoint,
-			inactivityScores:           beaconState.InactivityScores,
+			validators:                 capellaBeaconState.Validators,
+			balances:                   capellaBeaconState.Balances,
+			previousEpochParticipation: capellaBeaconState.PreviousEpochParticipation,
+			slot:                       capellaBeaconState.Slot,
+			blockRoots:                 capellaBeaconState.BlockRoots,
+			finalizedCheckpoint:        capellaBeaconState.FinalizedCheckpoint,
+			inactivityScores:           capellaBeaconState.InactivityScores,
 		}
 
 		return c.getAltairValidatorPerformance(
 			minimalAltairJson,
 			beaconStateJson.Version,
 			in.PublicKeys,
-			validatorPubkeyToIndex,
-			validatorIndexToArrayIndex,
-			currentEffectiveBalances,
-			validators,
 		)
-	case apimiddleware.BeaconStateBellatrixJson:
-		minimalAltairJson := minimalBeaconStateAltairJson{
-			validators:                 beaconState.Validators,
-			balances:                   beaconState.Balances,
-			previousEpochParticipation: beaconState.PreviousEpochParticipation,
-			slot:                       beaconState.Slot,
-			blockRoots:                 beaconState.BlockRoots,
-			finalizedCheckpoint:        beaconState.FinalizedCheckpoint,
-			inactivityScores:           beaconState.InactivityScores,
-		}
-
-		return c.getAltairValidatorPerformance(
-			minimalAltairJson,
-			beaconStateJson.Version,
-			in.PublicKeys,
-			validatorPubkeyToIndex,
-			validatorIndexToArrayIndex,
-			currentEffectiveBalances,
-			validators,
-		)
-	case apimiddleware.BeaconStateCapellaJson:
 	}
 
 	return nil, errors.Errorf("unsupported version `%s` for GetValidatorPerformance()", beaconStateJson.Version)
