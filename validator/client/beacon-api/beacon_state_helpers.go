@@ -85,14 +85,20 @@ func (c beaconApiMinimalState) NumValidators() int {
 	return c.numValidators
 }
 
-func NewBeaconApiMinimalState(jsonState apimiddleware.BeaconStateJson, version string) (*beaconApiMinimalState, error) {
-	slot, err := strconv.ParseUint(jsonState.Slot, 10, 64)
+func newBeaconApiMinimalState(
+	jsonSlot string,
+	jsonBlockRoots []string,
+	jsonFinalizedCheckpoint *apimiddleware.CheckpointJson,
+	numValidators int,
+	version string,
+) (*beaconApiMinimalState, error) {
+	slot, err := strconv.ParseUint(jsonSlot, 10, 64)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse slot `%s`", jsonState.Slot)
+		return nil, errors.Wrapf(err, "failed to parse slot `%s`", jsonSlot)
 	}
 
-	blockRoots := make([][]byte, len(jsonState.BlockRoots))
-	for idx, jsonBlockRoot := range jsonState.BlockRoots {
+	blockRoots := make([][]byte, len(jsonBlockRoots))
+	for idx, jsonBlockRoot := range jsonBlockRoots {
 		blockRoot, err := hexutil.Decode(jsonBlockRoot)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to decode block root `%s`", jsonBlockRoot)
@@ -101,13 +107,13 @@ func NewBeaconApiMinimalState(jsonState apimiddleware.BeaconStateJson, version s
 		blockRoots[idx] = blockRoot
 	}
 
-	if jsonState.FinalizedCheckpoint == nil {
+	if jsonFinalizedCheckpoint == nil {
 		return nil, errors.New("finalized checkpoint is nil")
 	}
 
-	finalizedEpoch, err := strconv.ParseUint(jsonState.FinalizedCheckpoint.Epoch, 10, 64)
+	finalizedEpoch, err := strconv.ParseUint(jsonFinalizedCheckpoint.Epoch, 10, 64)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse finalized epoch `%s`", jsonState.FinalizedCheckpoint.Epoch)
+		return nil, errors.Wrapf(err, "failed to parse finalized epoch `%s`", jsonFinalizedCheckpoint.Epoch)
 	}
 
 	return &beaconApiMinimalState{
@@ -115,41 +121,7 @@ func NewBeaconApiMinimalState(jsonState apimiddleware.BeaconStateJson, version s
 		blockRoots:               blockRoots,
 		finalizedCheckpointEpoch: primitives.Epoch(finalizedEpoch),
 		version:                  version,
-		numValidators:            len(jsonState.Validators),
-	}, nil
-}
-
-func NewBeaconApiMinimalAltairState(jsonState minimalBeaconStateAltairJson, version string) (*beaconApiMinimalState, error) {
-	slot, err := strconv.ParseUint(jsonState.slot, 10, 64)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse slot `%s`", jsonState.slot)
-	}
-
-	blockRoots := make([][]byte, len(jsonState.blockRoots))
-	for idx, jsonBlockRoot := range jsonState.blockRoots {
-		blockRoot, err := hexutil.Decode(jsonBlockRoot)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to decode block root `%s`", jsonBlockRoot)
-		}
-
-		blockRoots[idx] = blockRoot
-	}
-
-	if jsonState.finalizedCheckpoint == nil {
-		return nil, errors.New("finalized checkpoint is nil")
-	}
-
-	finalizedEpoch, err := strconv.ParseUint(jsonState.finalizedCheckpoint.Epoch, 10, 64)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse finalized epoch `%s`", jsonState.finalizedCheckpoint.Epoch)
-	}
-
-	return &beaconApiMinimalState{
-		slot:                     primitives.Slot(slot),
-		blockRoots:               blockRoots,
-		finalizedCheckpointEpoch: primitives.Epoch(finalizedEpoch),
-		version:                  version,
-		numValidators:            len(jsonState.validators),
+		numValidators:            numValidators,
 	}, nil
 }
 
@@ -229,7 +201,6 @@ func computeAttestedEffectiveBalance(validators []*apimiddleware.ValidatorJson, 
 //	return set(index for i, index in enumerate(committee) if bits[i])
 func (c beaconApiBeaconChainClient) getAttestingIndices(
 	ctx context.Context,
-	beaconState *apimiddleware.BeaconStateJson,
 	attestationData *ethpb.AttestationData,
 	bits bitfield.Bitlist,
 ) ([]primitives.ValidatorIndex, error) {
@@ -240,10 +211,6 @@ func (c beaconApiBeaconChainClient) getAttestingIndices(
 	committee, err := c.getBeaconCommittee(ctx, attestationData.Slot, attestationData.CommitteeIndex)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get committee for committee index `%d` and slot `%d`", attestationData.CommitteeIndex, attestationData.Slot)
-	}
-
-	if committee == nil {
-		return nil, errors.New("committee is nil")
 	}
 
 	attestingIndices := make([]primitives.ValidatorIndex, 0, len(committee.Validators))
@@ -261,19 +228,6 @@ func (c beaconApiBeaconChainClient) getAttestingIndices(
 	return attestingIndices, nil
 }
 
-// def get_beacon_committee(state: BeaconState, slot: Slot, index: CommitteeIndex) -> Sequence[ValidatorIndex]:
-//
-//	"""
-//	Return the beacon committee at ``slot`` for ``index``.
-//	"""
-//	epoch = compute_epoch_at_slot(slot)
-//	committees_per_slot = get_committee_count_per_slot(state, epoch)
-//	return compute_committee(
-//		indices=get_active_validator_indices(state, epoch),
-//		seed=get_seed(state, epoch, DOMAIN_BEACON_ATTESTER),
-//		index=(slot % SLOTS_PER_EPOCH) * committees_per_slot + index,
-//		count=committees_per_slot * SLOTS_PER_EPOCH,
-//	)
 func (c beaconApiBeaconChainClient) getBeaconCommittee(ctx context.Context, slot primitives.Slot, committeeIndex primitives.CommitteeIndex) (*apimiddleware.CommitteeJson, error) {
 	committeeParams := url.Values{}
 	committeeParams.Add("epoch", strconv.FormatUint(uint64(slots.ToEpoch(slot)), 10))
@@ -396,7 +350,7 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 	version string,
 	pubkeys [][]byte,
 ) (*ethpb.ValidatorPerformanceResponse, error) {
-	minimalState, err := NewBeaconApiMinimalState(beaconState, version)
+	minimalState, err := newBeaconApiMinimalState(beaconState.Slot, beaconState.BlockRoots, beaconState.FinalizedCheckpoint, len(beaconState.Validators), version)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create beacon api minimal state")
 	}
@@ -464,7 +418,7 @@ func (c beaconApiBeaconChainClient) getPhase0ValidatorPerformance(
 			return nil, errors.Wrap(err, "failed to retrieve whether attestation attested in previous epoch")
 		}
 
-		attestingIndices, err := c.getAttestingIndices(ctx, &beaconState, pendingAttestation.Data, pendingAttestation.AggregationBits)
+		attestingIndices, err := c.getAttestingIndices(ctx, pendingAttestation.Data, pendingAttestation.AggregationBits)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get attesting indices")
 		}
@@ -606,7 +560,7 @@ func (c beaconApiBeaconChainClient) getAltairValidatorPerformance(
 	version string,
 	pubkeys [][]byte,
 ) (*ethpb.ValidatorPerformanceResponse, error) {
-	minimalState, err := NewBeaconApiMinimalAltairState(beaconState, version)
+	minimalState, err := newBeaconApiMinimalState(beaconState.slot, beaconState.blockRoots, beaconState.finalizedCheckpoint, len(beaconState.validators), version)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create beacon api minimal state")
 	}
