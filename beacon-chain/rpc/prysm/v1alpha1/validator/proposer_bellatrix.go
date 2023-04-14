@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/pkg/errors"
@@ -68,6 +69,7 @@ func (vs *Server) setExecutionData(ctx context.Context, blk interfaces.SignedBea
 				v, err = builderPayload.Value()
 				if err != nil {
 					log.WithError(err).Warn("Proposer: failed to get builder payload value") // Default to local if can't get builder value.
+					v = big.NewInt(0)                                                        // Default to local if can't get builder value.
 				}
 				builderValue := v.Uint64()
 
@@ -86,6 +88,7 @@ func (vs *Server) setExecutionData(ctx context.Context, blk interfaces.SignedBea
 					blk.SetBlinded(true)
 					if err := blk.SetExecution(builderPayload); err != nil {
 						log.WithError(err).Warn("Proposer: failed to set builder payload")
+						blk.SetBlinded(false)
 					} else {
 						return nil
 					}
@@ -102,12 +105,12 @@ func (vs *Server) setExecutionData(ctx context.Context, blk interfaces.SignedBea
 				blk.SetBlinded(true)
 				if err := blk.SetExecution(builderPayload); err != nil {
 					log.WithError(err).Warn("Proposer: failed to set builder payload")
+					blk.SetBlinded(false)
 				} else {
 					return nil
 				}
 			}
 		}
-
 	}
 
 	executionData, err := vs.getExecutionPayload(ctx, slot, idx, blk.Block().ParentRoot(), headState)
@@ -147,6 +150,9 @@ func (vs *Server) getPayloadHeaderFromBuilder(ctx context.Context, slot primitiv
 	}
 	if signedBid.IsNil() {
 		return nil, errors.New("builder returned nil bid")
+	}
+	if signedBid.Version() != b.Version() {
+		return nil, fmt.Errorf("builder bid response version: %d is different from head block version: %d", signedBid.Version(), b.Version())
 	}
 	bid, err := signedBid.Message()
 	if err != nil {

@@ -13,7 +13,8 @@ import (
 
 type stateValidatorsProvider interface {
 	GetStateValidators(context.Context, []string, []int64, []string) (*rpcmiddleware.StateValidatorsResponseJson, error)
-	GetStateValidatorsForSlot(context.Context, primitives.Slot, []string, []int64, []string) (*rpcmiddleware.StateValidatorsResponseJson, error)
+	GetStateValidatorsForSlot(context.Context, primitives.Slot, []string, []primitives.ValidatorIndex, []string) (*rpcmiddleware.StateValidatorsResponseJson, error)
+	GetStateValidatorsForHead(context.Context, []string, []primitives.ValidatorIndex, []string) (*rpcmiddleware.StateValidatorsResponseJson, error)
 }
 
 type beaconApiStateValidatorsProvider struct {
@@ -26,44 +27,65 @@ func (c beaconApiStateValidatorsProvider) GetStateValidators(
 	indexes []int64,
 	statuses []string,
 ) (*rpcmiddleware.StateValidatorsResponseJson, error) {
-	const endpoint = "/eth/v1/beacon/states/head/validators"
-	return c.getStateValidatorsHelper(ctx, stringPubkeys, indexes, statuses, endpoint)
+	params := neturl.Values{}
+	indexesSet := make(map[int64]struct{}, len(indexes))
+	for _, index := range indexes {
+		if _, ok := indexesSet[index]; !ok {
+			indexesSet[index] = struct{}{}
+			params.Add("id", strconv.FormatInt(index, 10))
+		}
+	}
+
+	return c.getStateValidatorsHelper(ctx, "/eth/v1/beacon/states/head/validators", params, stringPubkeys, statuses)
 }
 
 func (c beaconApiStateValidatorsProvider) GetStateValidatorsForSlot(
 	ctx context.Context,
 	slot primitives.Slot,
 	stringPubkeys []string,
-	indexes []int64,
+	indices []primitives.ValidatorIndex,
 	statuses []string,
 ) (*rpcmiddleware.StateValidatorsResponseJson, error) {
-	endpoint := fmt.Sprintf("/eth/v1/beacon/states/%d/validators", slot)
-	return c.getStateValidatorsHelper(ctx, stringPubkeys, indexes, statuses, endpoint)
+	params := convertValidatorIndicesToParams(indices)
+	url := fmt.Sprintf("/eth/v1/beacon/states/%d/validators", slot)
+	return c.getStateValidatorsHelper(ctx, url, params, stringPubkeys, statuses)
+}
+
+func (c beaconApiStateValidatorsProvider) GetStateValidatorsForHead(
+	ctx context.Context,
+	stringPubkeys []string,
+	indices []primitives.ValidatorIndex,
+	statuses []string,
+) (*rpcmiddleware.StateValidatorsResponseJson, error) {
+	params := convertValidatorIndicesToParams(indices)
+	return c.getStateValidatorsHelper(ctx, "/eth/v1/beacon/states/head/validators", params, stringPubkeys, statuses)
+}
+
+func convertValidatorIndicesToParams(indices []primitives.ValidatorIndex) neturl.Values {
+	params := neturl.Values{}
+	indicesSet := make(map[primitives.ValidatorIndex]struct{}, len(indices))
+	for _, index := range indices {
+		if _, ok := indicesSet[index]; !ok {
+			indicesSet[index] = struct{}{}
+			params.Add("id", strconv.FormatUint(uint64(index), 10))
+		}
+	}
+	return params
 }
 
 func (c beaconApiStateValidatorsProvider) getStateValidatorsHelper(
 	ctx context.Context,
-	stringPubkeys []string,
-	indexes []int64,
-	statuses []string,
 	endpoint string,
+	params neturl.Values,
+	stringPubkeys []string,
+	statuses []string,
 ) (*rpcmiddleware.StateValidatorsResponseJson, error) {
-	params := neturl.Values{}
-
 	stringPubKeysSet := make(map[string]struct{}, len(stringPubkeys))
-	indexesSet := make(map[int64]struct{}, len(indexes))
 
 	for _, stringPubkey := range stringPubkeys {
 		if _, ok := stringPubKeysSet[stringPubkey]; !ok {
 			stringPubKeysSet[stringPubkey] = struct{}{}
 			params.Add("id", stringPubkey)
-		}
-	}
-
-	for _, index := range indexes {
-		if _, ok := indexesSet[index]; !ok {
-			indexesSet[index] = struct{}{}
-			params.Add("id", strconv.FormatInt(index, 10))
 		}
 	}
 
