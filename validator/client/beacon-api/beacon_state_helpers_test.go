@@ -478,3 +478,140 @@ func TestGetAttestingIndices(t *testing.T) {
 		assert.DeepEqual(t, expectedAttestingIndices, attestingIndices)
 	})
 }
+
+func TestGetBeaconCommittee(t *testing.T) {
+	const committeeEndpoint = "/eth/v1/beacon/states/head/committees?epoch=%d&index=%d&slot=%d"
+
+	t.Run("correctly handles failures", func(t *testing.T) {
+		t.Run("bad committee REST request", func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			ctx := context.Background()
+
+			jsonRestHandler := mock.NewMockjsonRestHandler(ctrl)
+			jsonRestHandler.EXPECT().GetRestJsonResponse(
+				ctx,
+				fmt.Sprintf(committeeEndpoint, 0, 1, 2),
+				gomock.Any(),
+			).Return(
+				nil,
+				errors.New("foo error"),
+			)
+
+			beaconChainClient := beaconApiBeaconChainClient{jsonRestHandler: jsonRestHandler}
+			_, err := beaconChainClient.getBeaconCommittee(ctx, 2, 1)
+			assert.ErrorContains(t, "failed to query committees for slot `2`", err)
+			assert.ErrorContains(t, "foo error", err)
+		})
+
+		t.Run("too many committees", func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			ctx := context.Background()
+
+			committee := apimiddleware.StateCommitteesResponseJson{}
+			jsonRestHandler := mock.NewMockjsonRestHandler(ctrl)
+			jsonRestHandler.EXPECT().GetRestJsonResponse(
+				ctx,
+				fmt.Sprintf(committeeEndpoint, 0, 1, 2),
+				&committee,
+			).Return(
+				nil,
+				nil,
+			).SetArg(
+				2,
+				apimiddleware.StateCommitteesResponseJson{
+					Data: []*apimiddleware.CommitteeJson{
+						{}, {},
+					},
+				},
+			)
+
+			beaconChainClient := beaconApiBeaconChainClient{jsonRestHandler: jsonRestHandler}
+			_, err := beaconChainClient.getBeaconCommittee(ctx, 2, 1)
+			assert.ErrorContains(t, "1 committee was expected, but 2 were received", err)
+		})
+
+		t.Run("nil committee", func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			ctx := context.Background()
+
+			committee := apimiddleware.StateCommitteesResponseJson{}
+			jsonRestHandler := mock.NewMockjsonRestHandler(ctrl)
+			jsonRestHandler.EXPECT().GetRestJsonResponse(
+				ctx,
+				fmt.Sprintf(committeeEndpoint, 0, 1, 2),
+				&committee,
+			).Return(
+				nil,
+				nil,
+			).SetArg(
+				2,
+				apimiddleware.StateCommitteesResponseJson{
+					Data: []*apimiddleware.CommitteeJson{
+						nil,
+					},
+				},
+			)
+
+			beaconChainClient := beaconApiBeaconChainClient{jsonRestHandler: jsonRestHandler}
+			_, err := beaconChainClient.getBeaconCommittee(ctx, 2, 1)
+			assert.ErrorContains(t, "committee data is nil", err)
+		})
+	})
+
+	t.Run("retrieves the right attesting indices", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		ctx := context.Background()
+
+		committee := apimiddleware.StateCommitteesResponseJson{}
+
+		jsonRestHandler := mock.NewMockjsonRestHandler(ctrl)
+		jsonRestHandler.EXPECT().GetRestJsonResponse(
+			ctx,
+			fmt.Sprintf(committeeEndpoint, 0, 1, 2),
+			&committee,
+		).Return(
+			nil,
+			nil,
+		).SetArg(
+			2,
+			apimiddleware.StateCommitteesResponseJson{
+				Data: []*apimiddleware.CommitteeJson{
+					{
+						Validators: []string{
+							"1",
+							"2",
+							"3",
+							"4",
+							"5",
+						},
+					},
+				},
+			},
+		)
+		beaconChainClient := beaconApiBeaconChainClient{jsonRestHandler: jsonRestHandler}
+
+		bits := bitfield.NewBitlist(5)
+		bits.SetBitAt(0, true)
+		bits.SetBitAt(1, false)
+		bits.SetBitAt(2, true)
+		bits.SetBitAt(3, false)
+		bits.SetBitAt(4, true)
+
+		attestingIndices, err := beaconChainClient.getAttestingIndices(ctx,
+			&eth.AttestationData{
+				Slot:           2,
+				CommitteeIndex: 1,
+			},
+			bits,
+		)
+
+		expectedAttestingIndices := []primitives.ValidatorIndex{1, 3, 5}
+
+		require.NoError(t, err)
+		assert.DeepEqual(t, expectedAttestingIndices, attestingIndices)
+	})
+}

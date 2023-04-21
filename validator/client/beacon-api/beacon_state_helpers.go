@@ -240,10 +240,6 @@ func (c beaconApiBeaconChainClient) getBeaconCommittee(ctx context.Context, slot
 		return nil, errors.Wrapf(err, "failed to query committees for slot `%d`", slot)
 	}
 
-	if stateCommittees.Data == nil {
-		return nil, errors.New("state committees data is nil")
-	}
-
 	if len(stateCommittees.Data) != 1 {
 		return nil, errors.Errorf("1 committee was expected, but %d were received", len(stateCommittees.Data))
 	}
