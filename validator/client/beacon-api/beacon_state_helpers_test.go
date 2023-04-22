@@ -12,6 +12,7 @@ import (
 	"github.com/prysmaticlabs/prysm/v4/beacon-chain/rpc/apimiddleware"
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	eth "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
+	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v4/testing/assert"
 	"github.com/prysmaticlabs/prysm/v4/testing/require"
 	"github.com/prysmaticlabs/prysm/v4/validator/client/beacon-api/mock"
@@ -607,5 +608,162 @@ func TestGetBeaconCommittee(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.DeepEqual(t, expectedBeaconCommittee, beaconCommittee)
+	})
+}
+
+func TestConvertJsonPendingAttestationsToProto(t *testing.T) {
+	t.Run("correctly handles failures", func(t *testing.T) {
+		t.Run("nil pending attestation", func(t *testing.T) {
+			_, err := convertJsonPendingAttestationsToProto([]*apimiddleware.PendingAttestationJson{
+				nil,
+			})
+			assert.ErrorContains(t, "pending attestation is nil", err)
+		})
+		t.Run("invalid aggregation bits", func(t *testing.T) {
+			_, err := convertJsonPendingAttestationsToProto([]*apimiddleware.PendingAttestationJson{
+				{
+					AggregationBits: "foo",
+				},
+			})
+			assert.ErrorContains(t, "failed to decode aggregation bits `foo`", err)
+		})
+		t.Run("invalid attestation data", func(t *testing.T) {
+			_, err := convertJsonPendingAttestationsToProto([]*apimiddleware.PendingAttestationJson{
+				{
+					AggregationBits: hexutil.Encode([]byte{1}),
+					Data:            nil,
+				},
+			})
+			assert.ErrorContains(t, "failed to convert json attestation data to proto", err)
+		})
+		t.Run("invalid inclusion delay", func(t *testing.T) {
+			_, err := convertJsonPendingAttestationsToProto([]*apimiddleware.PendingAttestationJson{
+				{
+					AggregationBits: hexutil.Encode([]byte{1}),
+					Data: &apimiddleware.AttestationDataJson{
+						Slot:            "2",
+						CommitteeIndex:  "3",
+						BeaconBlockRoot: hexutil.Encode([]byte{4}),
+						Source: &apimiddleware.CheckpointJson{
+							Epoch: "5",
+							Root:  hexutil.Encode([]byte{6}),
+						},
+						Target: &apimiddleware.CheckpointJson{
+							Epoch: "7",
+							Root:  hexutil.Encode([]byte{8}),
+						},
+					},
+					InclusionDelay: "bar",
+				},
+			})
+			assert.ErrorContains(t, "failed to parse pending attestation inclusion delay `bar`", err)
+		})
+
+		t.Run("invalid proposer index", func(t *testing.T) {
+			_, err := convertJsonPendingAttestationsToProto([]*apimiddleware.PendingAttestationJson{
+				{
+					AggregationBits: hexutil.Encode([]byte{1}),
+					Data: &apimiddleware.AttestationDataJson{
+						Slot:            "2",
+						CommitteeIndex:  "3",
+						BeaconBlockRoot: hexutil.Encode([]byte{4}),
+						Source: &apimiddleware.CheckpointJson{
+							Epoch: "5",
+							Root:  hexutil.Encode([]byte{6}),
+						},
+						Target: &apimiddleware.CheckpointJson{
+							Epoch: "7",
+							Root:  hexutil.Encode([]byte{8}),
+						},
+					},
+					InclusionDelay: "9",
+					ProposerIndex:  "foo",
+				},
+			})
+			assert.ErrorContains(t, "failed to parse pending attestation proposer index `foo`", err)
+		})
+	})
+
+	t.Run("retrieves the right pending attestations", func(t *testing.T) {
+		pendingAttestations, err := convertJsonPendingAttestationsToProto([]*apimiddleware.PendingAttestationJson{
+			{
+				AggregationBits: hexutil.Encode([]byte{1}),
+				Data: &apimiddleware.AttestationDataJson{
+					Slot:            "2",
+					CommitteeIndex:  "3",
+					BeaconBlockRoot: hexutil.Encode([]byte{4}),
+					Source: &apimiddleware.CheckpointJson{
+						Epoch: "5",
+						Root:  hexutil.Encode([]byte{6}),
+					},
+					Target: &apimiddleware.CheckpointJson{
+						Epoch: "7",
+						Root:  hexutil.Encode([]byte{8}),
+					},
+				},
+				InclusionDelay: "9",
+				ProposerIndex:  "10",
+			},
+			{
+				AggregationBits: hexutil.Encode([]byte{11}),
+				Data: &apimiddleware.AttestationDataJson{
+					Slot:            "12",
+					CommitteeIndex:  "13",
+					BeaconBlockRoot: hexutil.Encode([]byte{14}),
+					Source: &apimiddleware.CheckpointJson{
+						Epoch: "15",
+						Root:  hexutil.Encode([]byte{16}),
+					},
+					Target: &apimiddleware.CheckpointJson{
+						Epoch: "17",
+						Root:  hexutil.Encode([]byte{18}),
+					},
+				},
+				InclusionDelay: "19",
+				ProposerIndex:  "20",
+			},
+		})
+
+		expectedPendingAttestations := []*ethpb.PendingAttestation{
+			{
+				AggregationBits: bitfield.Bitlist{1},
+				Data: &ethpb.AttestationData{
+					Slot:            2,
+					CommitteeIndex:  3,
+					BeaconBlockRoot: []byte{4},
+					Source: &ethpb.Checkpoint{
+						Epoch: 5,
+						Root:  []byte{6},
+					},
+					Target: &ethpb.Checkpoint{
+						Epoch: 7,
+						Root:  []byte{8},
+					},
+				},
+				InclusionDelay: 9,
+				ProposerIndex:  10,
+			},
+			{
+				AggregationBits: bitfield.Bitlist{11},
+				Data: &ethpb.AttestationData{
+					Slot:            12,
+					CommitteeIndex:  13,
+					BeaconBlockRoot: []byte{14},
+					Source: &ethpb.Checkpoint{
+						Epoch: 15,
+						Root:  []byte{16},
+					},
+					Target: &ethpb.Checkpoint{
+						Epoch: 17,
+						Root:  []byte{18},
+					},
+				},
+				InclusionDelay: 19,
+				ProposerIndex:  20,
+			},
+		}
+
+		require.NoError(t, err)
+		assert.DeepEqual(t, expectedPendingAttestations, pendingAttestations)
 	})
 }

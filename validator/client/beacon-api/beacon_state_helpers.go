@@ -261,7 +261,7 @@ func convertJsonPendingAttestationsToProto(jsonPendingAttestations []*apimiddlew
 
 		aggregationBits, err := hexutil.Decode(jsonPendingAttestation.AggregationBits)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to decode aggregation bits `%s`", aggregationBits)
+			return nil, errors.Wrapf(err, "failed to decode aggregation bits `%s`", jsonPendingAttestation.AggregationBits)
 		}
 
 		attestationData, err := convertAttestationDataToProto(jsonPendingAttestation.Data)
