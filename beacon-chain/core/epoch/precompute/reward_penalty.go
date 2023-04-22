@@ -14,7 +14,7 @@ type attesterRewardsFunc func(state.ReadOnlyMinimalState, *Balance, []*Validator
 type proposerRewardsFunc func(state.ReadOnlyMinimalState, *Balance, []*Validator) ([]uint64, error)
 
 // ProcessRewardsAndPenaltiesPrecompute processes the rewards and penalties of individual validator.
-// This is an optimized version by passing in precomputed validator attesting records and and total epoch balances.
+// This is an optimized version by passing in precomputed validator attesting records and total epoch balances.
 func ProcessRewardsAndPenaltiesPrecompute(
 	state state.BeaconState,
 	pBal *Balance,
@@ -104,7 +104,6 @@ func AttestationDelta(pBal *Balance, sqrtActiveCurrentEpoch uint64, v *Validator
 		} else {
 			rewardNumerator := br * (pBal.PrevEpochAttested / effectiveBalanceIncrement)
 			r += rewardNumerator / currentEpochBalance
-
 		}
 	} else {
 		p += br
