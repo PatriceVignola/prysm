@@ -9,6 +9,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/go-bitfield"
+	"github.com/prysmaticlabs/prysm/v4/beacon-chain/core/epoch/precompute"
 	"github.com/prysmaticlabs/prysm/v4/beacon-chain/rpc/apimiddleware"
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	eth "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
@@ -765,5 +766,264 @@ func TestConvertJsonPendingAttestationsToProto(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.DeepEqual(t, expectedPendingAttestations, pendingAttestations)
+	})
+}
+
+func TestConvertValidatorsToPrecomputeValidators(t *testing.T) {
+	t.Run("correctly handles failures", func(t *testing.T) {
+		t.Run("invalid activation epoch", func(t *testing.T) {
+			_, err := convertValidatorsToPrecomputeValidators(
+				[]*apimiddleware.ValidatorJson{
+					{
+						ActivationEpoch: "foo",
+					},
+				},
+				1,
+				[]uint64{},
+				[]bool{},
+				[]bool{},
+				[]bool{},
+				[]primitives.Slot{},
+				[]primitives.ValidatorIndex{},
+			)
+			assert.ErrorContains(t, "failed to retrieve whether validator was active at previous epoch `0`", err)
+		})
+		t.Run("invalid withdrawable epoch", func(t *testing.T) {
+			_, err := convertValidatorsToPrecomputeValidators(
+				[]*apimiddleware.ValidatorJson{
+					{
+						ActivationEpoch:   "1",
+						ExitEpoch:         "2",
+						WithdrawableEpoch: "bar",
+					},
+				},
+				3,
+				[]uint64{},
+				[]bool{},
+				[]bool{},
+				[]bool{},
+				[]primitives.Slot{},
+				[]primitives.ValidatorIndex{},
+			)
+			assert.ErrorContains(t, "failed to parse validator withdrawable epoch `bar`", err)
+		})
+	})
+
+	t.Run("retrieves the right precompute validators", func(t *testing.T) {
+		t.Run("nil inclusion distances and proposer indices", func(t *testing.T) {
+			precomputeValidators, err := convertValidatorsToPrecomputeValidators(
+				[]*apimiddleware.ValidatorJson{
+					{
+						ActivationEpoch:   "1",
+						ExitEpoch:         "2",
+						WithdrawableEpoch: "3",
+						Slashed:           true,
+					},
+					{
+						ActivationEpoch:   "4",
+						ExitEpoch:         "14",
+						WithdrawableEpoch: "15",
+						Slashed:           false,
+					},
+				},
+				7,
+				[]uint64{8, 9},
+				[]bool{true, false},
+				[]bool{false, true},
+				[]bool{true, false},
+				nil,
+				nil,
+			)
+
+			expectedPendingAttestations := []*precompute.Validator{
+				{
+					IsSlashed:                    true,
+					CurrentEpochEffectiveBalance: 8,
+					IsPrevEpochAttester:          true,
+					IsPrevEpochSourceAttester:    true,
+					IsPrevEpochTargetAttester:    false,
+					IsPrevEpochHeadAttester:      true,
+					IsActivePrevEpoch:            false,
+					IsWithdrawableCurrentEpoch:   true,
+				},
+				{
+					IsSlashed:                    false,
+					CurrentEpochEffectiveBalance: 9,
+					IsPrevEpochAttester:          false,
+					IsPrevEpochSourceAttester:    false,
+					IsPrevEpochTargetAttester:    true,
+					IsPrevEpochHeadAttester:      false,
+					IsActivePrevEpoch:            true,
+					IsWithdrawableCurrentEpoch:   false,
+				},
+			}
+
+			require.NoError(t, err)
+			assert.DeepEqual(t, expectedPendingAttestations, precomputeValidators)
+		})
+
+		t.Run("nil proposer indices", func(t *testing.T) {
+			precomputeValidators, err := convertValidatorsToPrecomputeValidators(
+				[]*apimiddleware.ValidatorJson{
+					{
+						ActivationEpoch:   "1",
+						ExitEpoch:         "2",
+						WithdrawableEpoch: "3",
+						Slashed:           true,
+					},
+					{
+						ActivationEpoch:   "4",
+						ExitEpoch:         "14",
+						WithdrawableEpoch: "15",
+						Slashed:           false,
+					},
+				},
+				7,
+				[]uint64{8, 9},
+				[]bool{true, false},
+				[]bool{false, true},
+				[]bool{true, false},
+				[]primitives.Slot{10, 11},
+				nil,
+			)
+
+			expectedPendingAttestations := []*precompute.Validator{
+				{
+					IsSlashed:                    true,
+					CurrentEpochEffectiveBalance: 8,
+					IsPrevEpochAttester:          true,
+					IsPrevEpochSourceAttester:    true,
+					IsPrevEpochTargetAttester:    false,
+					IsPrevEpochHeadAttester:      true,
+					IsActivePrevEpoch:            false,
+					IsWithdrawableCurrentEpoch:   true,
+					InclusionDistance:            10,
+				},
+				{
+					IsSlashed:                    false,
+					CurrentEpochEffectiveBalance: 9,
+					IsPrevEpochAttester:          false,
+					IsPrevEpochSourceAttester:    false,
+					IsPrevEpochTargetAttester:    true,
+					IsPrevEpochHeadAttester:      false,
+					IsActivePrevEpoch:            true,
+					IsWithdrawableCurrentEpoch:   false,
+					InclusionDistance:            11,
+				},
+			}
+
+			require.NoError(t, err)
+			assert.DeepEqual(t, expectedPendingAttestations, precomputeValidators)
+		})
+
+		t.Run("nil inclusion distances", func(t *testing.T) {
+			precomputeValidators, err := convertValidatorsToPrecomputeValidators(
+				[]*apimiddleware.ValidatorJson{
+					{
+						ActivationEpoch:   "1",
+						ExitEpoch:         "2",
+						WithdrawableEpoch: "3",
+						Slashed:           true,
+					},
+					{
+						ActivationEpoch:   "4",
+						ExitEpoch:         "14",
+						WithdrawableEpoch: "15",
+						Slashed:           false,
+					},
+				},
+				7,
+				[]uint64{8, 9},
+				[]bool{true, false},
+				[]bool{false, true},
+				[]bool{true, false},
+				nil,
+				[]primitives.ValidatorIndex{12, 13},
+			)
+
+			expectedPendingAttestations := []*precompute.Validator{
+				{
+					IsSlashed:                    true,
+					CurrentEpochEffectiveBalance: 8,
+					IsPrevEpochAttester:          true,
+					IsPrevEpochSourceAttester:    true,
+					IsPrevEpochTargetAttester:    false,
+					IsPrevEpochHeadAttester:      true,
+					IsActivePrevEpoch:            false,
+					IsWithdrawableCurrentEpoch:   true,
+					ProposerIndex:                12,
+				},
+				{
+					IsSlashed:                    false,
+					CurrentEpochEffectiveBalance: 9,
+					IsPrevEpochAttester:          false,
+					IsPrevEpochSourceAttester:    false,
+					IsPrevEpochTargetAttester:    true,
+					IsPrevEpochHeadAttester:      false,
+					IsActivePrevEpoch:            true,
+					IsWithdrawableCurrentEpoch:   false,
+					ProposerIndex:                13,
+				},
+			}
+
+			require.NoError(t, err)
+			assert.DeepEqual(t, expectedPendingAttestations, precomputeValidators)
+		})
+
+		t.Run("inclusion distances and proposer indices provided", func(t *testing.T) {
+			precomputeValidators, err := convertValidatorsToPrecomputeValidators(
+				[]*apimiddleware.ValidatorJson{
+					{
+						ActivationEpoch:   "1",
+						ExitEpoch:         "2",
+						WithdrawableEpoch: "3",
+						Slashed:           true,
+					},
+					{
+						ActivationEpoch:   "4",
+						ExitEpoch:         "14",
+						WithdrawableEpoch: "15",
+						Slashed:           false,
+					},
+				},
+				7,
+				[]uint64{8, 9},
+				[]bool{true, false},
+				[]bool{false, true},
+				[]bool{true, false},
+				[]primitives.Slot{10, 11},
+				[]primitives.ValidatorIndex{12, 13},
+			)
+
+			expectedPendingAttestations := []*precompute.Validator{
+				{
+					IsSlashed:                    true,
+					CurrentEpochEffectiveBalance: 8,
+					IsPrevEpochAttester:          true,
+					IsPrevEpochSourceAttester:    true,
+					IsPrevEpochTargetAttester:    false,
+					IsPrevEpochHeadAttester:      true,
+					IsActivePrevEpoch:            false,
+					IsWithdrawableCurrentEpoch:   true,
+					InclusionDistance:            10,
+					ProposerIndex:                12,
+				},
+				{
+					IsSlashed:                    false,
+					CurrentEpochEffectiveBalance: 9,
+					IsPrevEpochAttester:          false,
+					IsPrevEpochSourceAttester:    false,
+					IsPrevEpochTargetAttester:    true,
+					IsPrevEpochHeadAttester:      false,
+					IsActivePrevEpoch:            true,
+					IsWithdrawableCurrentEpoch:   false,
+					InclusionDistance:            11,
+					ProposerIndex:                13,
+				},
+			}
+
+			require.NoError(t, err)
+			assert.DeepEqual(t, expectedPendingAttestations, precomputeValidators)
+		})
 	})
 }
