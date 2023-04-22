@@ -561,7 +561,7 @@ func TestGetBeaconCommittee(t *testing.T) {
 		})
 	})
 
-	t.Run("retrieves the right attesting indices", func(t *testing.T) {
+	t.Run("retrieves the right beacon committee", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		ctx := context.Background()
@@ -594,24 +594,18 @@ func TestGetBeaconCommittee(t *testing.T) {
 		)
 		beaconChainClient := beaconApiBeaconChainClient{jsonRestHandler: jsonRestHandler}
 
-		bits := bitfield.NewBitlist(5)
-		bits.SetBitAt(0, true)
-		bits.SetBitAt(1, false)
-		bits.SetBitAt(2, true)
-		bits.SetBitAt(3, false)
-		bits.SetBitAt(4, true)
-
-		attestingIndices, err := beaconChainClient.getAttestingIndices(ctx,
-			&eth.AttestationData{
-				Slot:           2,
-				CommitteeIndex: 1,
+		beaconCommittee, err := beaconChainClient.getBeaconCommittee(ctx, 2, 1)
+		expectedBeaconCommittee := &apimiddleware.CommitteeJson{
+			Validators: []string{
+				"1",
+				"2",
+				"3",
+				"4",
+				"5",
 			},
-			bits,
-		)
-
-		expectedAttestingIndices := []primitives.ValidatorIndex{1, 3, 5}
+		}
 
 		require.NoError(t, err)
-		assert.DeepEqual(t, expectedAttestingIndices, attestingIndices)
+		assert.DeepEqual(t, expectedBeaconCommittee, beaconCommittee)
 	})
 }
